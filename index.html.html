@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Tracciatori Carbonari</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+:root{--bg:#0F1417;--panel:#161C21;--panel2:#1E262C;--line:#2A343B;--ink:#E9E7DF;--dim:#8B948C;--brass:#C9A227;--route:#39C0ED;--ok:#4CAF6D;--exclude:#DB4B3F;}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--ink);overflow:hidden}
+.app{display:flex;height:100%}
+.panel{width:340px;min-width:340px;height:100%;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;z-index:1200}
+.head{padding:15px 18px 13px;border-bottom:1px solid var(--line)}
+.eyebrow{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--brass)}
+h1{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:24px;letter-spacing:.02em;text-transform:uppercase;margin:5px 0 2px;line-height:1}
+.sub{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--dim)}
+.body{flex:1;overflow-y:auto;padding:16px 18px 22px}
+.label{font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:13px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);margin:0 0 8px}
+.block{margin-bottom:22px}
+.field{display:flex;gap:6px;margin-bottom:7px}
+.field .pin{width:24px;flex:none;display:flex;align-items:center;justify-content:center;font-family:'Barlow Condensed';font-weight:700;font-size:14px;border-radius:6px}
+.pin.p{background:var(--ok);color:#06230f}.pin.a{background:var(--exclude);color:#2c0605}
+.field input{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:8px 9px;font-family:Inter;font-size:12.5px}
+.field input::placeholder{color:var(--dim)}
+.field input:focus{outline:none;border-color:var(--brass)}
+.field .go{width:34px;flex:none;background:var(--panel2);border:1px solid var(--line);border-radius:6px;color:var(--ink);cursor:pointer;font-size:13px}
+.field .go:hover{border-color:var(--brass);color:var(--brass)}
+.pointbtns{display:flex;gap:8px}
+.pb{flex:1;background:transparent;border:1px solid var(--line);border-radius:6px;color:var(--dim);padding:7px 0;font-family:'Barlow Condensed';font-weight:600;font-size:12px;letter-spacing:.05em;text-transform:uppercase;cursor:pointer}
+.pb:hover{color:var(--ink)}.pb.armed{border-color:var(--brass);color:var(--brass);box-shadow:0 0 0 1px var(--brass) inset}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{flex:1;background:transparent;border:0;color:var(--dim);padding:8px 0;font-family:'Barlow Condensed';font-weight:600;font-size:13px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+.seg button.on{background:var(--panel2);color:var(--ink)}
+.slider .row{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin-bottom:6px}
+.slider .row b{color:var(--brass);font-family:'JetBrains Mono';font-weight:500;text-transform:uppercase;font-size:11px}
+input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointer}
+.btn{width:100%;background:var(--brass);color:#161104;border:0;border-radius:6px;padding:12px;font-family:'Barlow Condensed';font-weight:700;font-size:15px;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;margin-top:12px}
+.btn:hover:not(:disabled){filter:brightness(1.08)}.btn:disabled{opacity:.4;cursor:default}
+.status{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--dim);margin-top:10px;line-height:1.5;min-height:16px}
+.odo{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:14px}
+.odo .n{font-family:'JetBrains Mono';font-weight:500;font-size:30px;line-height:1}
+.odo .n small{font-size:13px;color:var(--dim)}
+.odo .m{font-family:'JetBrains Mono';font-size:11px;color:var(--dim);margin-top:4px}
+.act{display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--ink);cursor:pointer;font-size:13px;width:100%;margin-top:10px;font-weight:500}
+.act:hover:not(:disabled){border-color:var(--brass)}.act:disabled{opacity:.45;cursor:default}
+.info{font-size:11.5px;color:var(--dim);line-height:1.5}
+.map{flex:1;height:100%;background:#0b0f12}
+.leaflet-container{background:#0b0f12;font-family:Inter}
+.mk{display:flex;align-items:center;justify-content:center;font-family:'Barlow Condensed';font-weight:700;font-size:15px;width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid #0b0f12;box-shadow:0 2px 6px rgba(0,0,0,.5)}
+.mk span{transform:rotate(45deg)}.mk.p{background:var(--ok);color:#06230f}.mk.a{background:var(--exclude);color:#2c0605}
+.leg{display:flex;align-items:center;gap:9px;font-size:12px;padding:4px 0}
+.sw{width:20px;height:5px;border-radius:2px;flex:none}
+.bd{display:flex;flex-direction:column;gap:5px;margin-top:11px}
+.bdrow{display:flex;align-items:center;gap:8px;font-size:11.5px}
+.bdrow .sw{width:14px}
+.bdrow .k{font-family:'JetBrains Mono';color:var(--dim);margin-left:auto;font-size:11px}
+.toast{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--brass);color:var(--ink);padding:10px 16px;border-radius:8px;font-size:13px;z-index:2000}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="panel">
+    <div class="head">
+      <div class="eyebrow">Web · motore proprio</div>
+      <h1>Tracciatori Carbonari</h1>
+      <div class="sub">Massimizza sterrato · traccia sul satellite</div>
+    </div>
+    <div class="body">
+      <div class="block">
+        <div class="label">Partenza e arrivo</div>
+        <div class="field"><span class="pin p">P</span><input id="qS" placeholder="Cerca partenza…"><button class="go" id="goS">&#9906;</button></div>
+        <div class="field"><span class="pin a">A</span><input id="qE" placeholder="Cerca arrivo…"><button class="go" id="goE">&#9906;</button></div>
+        <div class="pointbtns">
+          <button class="pb" id="pickS">Fissa partenza</button>
+          <button class="pb" id="pickE">Fissa arrivo</button>
+        </div>
+        <button class="btn" id="trace" disabled>Traccia percorso</button>
+        <div class="status" id="status">Scegli partenza e arrivo (ricerca o clic sulla mappa), poi &laquo;Traccia percorso&raquo;.</div>
+      </div>
+
+      <div class="block">
+        <div class="label">Evita l'asfalto</div>
+        <div class="slider">
+          <div class="row"><span>&#9666; piu' diretto</span><b id="aggrLbl">equilibrato</b><span>piu' sterrato &#9656;</span></div>
+          <input type="range" min="0" max="3" step="1" value="1" id="aggr">
+        </div>
+        <div class="info" style="margin-top:6px">Sposta a destra per pescare piu' sterrato (deviazioni piu' lunghe). Se una traccia c'e' gia', si ricalcola da sola.</div>
+      </div>
+
+      <div class="block">
+        <div class="label">Sfondo</div>
+        <div class="seg">
+          <button id="bSat" class="on">Satellite</button>
+          <button id="bTopo">Topografica</button>
+        </div>
+      </div>
+
+      <div class="block">
+        <div class="label">Legenda fondo</div>
+        <div class="leg"><span class="sw" style="background:#4CAF6D"></span>Offroad (sterrato certo)</div>
+        <div class="leg"><span class="sw" style="background:#1F6B3B"></span>Probabile sterrato (coperto/ombra)</div>
+        <div class="leg"><span class="sw" style="background:#8A93A0"></span>Da verificare (senza fondo)</div>
+        <div class="leg"><span class="sw" style="background:#DB4B3F"></span>Asfalto</div>
+        <div class="leg"><span class="sw" style="background:#0c0c0c;outline:1px solid #555"></span>Forse non legale</div>
+        <div class="leg"><span class="sw" style="background:#E8A33D"></span>Tratteggio arancio = ripido (&gt;15%; fitto = &gt;25%)</div>
+      </div>
+
+      <div class="block" id="result" style="display:none">
+        <div class="label">Traccia</div>
+        <div class="odo">
+          <div class="n" id="km">0.0<small> km</small></div>
+          <div class="m" id="pts">&mdash; punti</div>
+          <div class="bd" id="bd"></div>
+        </div>
+        <div id="verifyWrap" style="display:none"><button class="act" id="verify">&#9673;  Verifica fondo (satellite)</button></div>
+        <div id="optWrap" style="display:none"><button class="act" id="optimize">&#8635;  Rifai evitando asfalto e incerti</button></div>
+        <button class="act" id="dl">&#11015;  Scarica GPX (per Garmin)</button>
+        <button class="act" id="share">&#9993;  Invia via email</button>
+      </div>
+
+      <div class="block">
+        <div class="label">Note</div>
+        <div class="info">La traccia e' calcolata dal tuo motore BRouter sul cloud. Alla prima richiesta dopo una pausa il server puo' metterci ~1 minuto a svegliarsi: e' normale sul piano gratuito.</div>
+      </div>
+    </div>
+  </aside>
+  <div id="map" class="map"></div>
+  <div class="toast" id="toast" style="display:none"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+// ====== il TUO motore sul cloud ======
+var BROUTER = "https://tracciatore-offroad.onrender.com";
+var SAMPLER = "https://sampler-fondo.onrender.com";
+// varianti di durezza sull'asfalto (dallo slider)
+var PROFILES = ["offroad-max-10","offroad-max-25","offroad-max-45","offroad-max-75"];
+var LABELS   = ["piu' diretto","equilibrato","piu' sterrato","massimo"];
+
+var map = L.map('map',{zoomControl:true}).setView([45.11,8.45],11);
+var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Imagery &copy; Esri'});
+var topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17,attribution:'&copy; OpenTopoMap'});
+sat.addTo(map);
+document.getElementById('bSat').onclick=function(){map.removeLayer(topo);sat.addTo(map);this.classList.add('on');document.getElementById('bTopo').classList.remove('on');};
+document.getElementById('bTopo').onclick=function(){map.removeLayer(sat);topo.addTo(map);this.classList.add('on');document.getElementById('bSat').classList.remove('on');};
+
+var P={start:null,end:null}, armed=null, routeLayer=null, mkS=null, mkE=null, lastCoords=null, lastSegs=[];
+
+function toast(m){var t=document.getElementById('toast');t.textContent=m;t.style.display='block';setTimeout(function(){t.style.display='none';},2600);}
+function setStatus(m){document.getElementById('status').textContent=m;}
+function icon(kind){return L.divIcon({className:'',html:'<div class="mk '+(kind==='start'?'p':'a')+'"><span>'+(kind==='start'?'P':'A')+'</span></div>',iconSize:[26,26],iconAnchor:[6,24]});}
+function profile(){
+  var base=parseInt(document.getElementById('aggr').value,10);
+  var lvl=Math.min(PROFILES.length-1, base+(window.PASS||0));   // ogni passata alza la durezza
+  return PROFILES[lvl];
+}
+
+function setPoint(kind,lat,lng,label){
+  var m=(kind==='start'?mkS:mkE); if(m){map.removeLayer(m);}
+  var mk=L.marker([lat,lng],{icon:icon(kind),draggable:true}).addTo(map);
+  mk.on('dragend',function(){var p=mk.getLatLng();P[kind]={lat:p.lat,lng:p.lng};});
+  if(kind==='start'){mkS=mk;}else{mkE=mk;}
+  P[kind]={lat:lat,lng:lng};
+  document.getElementById(kind==='start'?'qS':'qE').value = label || (lat.toFixed(4)+', '+lng.toFixed(4));
+  document.getElementById('trace').disabled = !(P.start&&P.end);
+  if(P.start&&P.end){ map.fitBounds(L.latLngBounds([[P.start.lat,P.start.lng],[P.end.lat,P.end.lng]]).pad(0.3)); }
+}
+
+map.on('click',function(e){
+  if(!armed)return;
+  setPoint(armed,e.latlng.lat,e.latlng.lng,null);
+  document.getElementById(armed==='start'?'pickS':'pickE').classList.remove('armed');
+  armed=null;
+});
+document.getElementById('pickS').onclick=function(){armed=(armed==='start'?null:'start');this.classList.toggle('armed',armed==='start');document.getElementById('pickE').classList.remove('armed');setStatus(armed?'Clicca sulla mappa il punto di partenza.':'');};
+document.getElementById('pickE').onclick=function(){armed=(armed==='end'?null:'end');this.classList.toggle('armed',armed==='end');document.getElementById('pickS').classList.remove('armed');setStatus(armed?"Clicca sulla mappa il punto di arrivo.":'');};
+
+function geocode(kind){
+  var q=document.getElementById(kind==='start'?'qS':'qE').value.trim(); if(!q)return;
+  setStatus('Cerco "'+q+'"...');
+  fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&countrycodes=it,fr&q='+encodeURIComponent(q))
+    .then(function(r){return r.json();})
+    .then(function(j){ if(!j.length){setStatus('Nessun risultato per "'+q+'". Prova a cliccare sulla mappa.');return;}
+      // preferisco i centri abitati (citta'/paese) ai punti d'interesse omonimi
+      var pref=["city","town","village","municipality","administrative"], best=j[0];
+      for(var i=0;i<j.length;i++){ if(pref.indexOf(j[i].type)>=0){ best=j[i]; break; } }
+      var label=best.display_name.split(',').slice(0,2).join(',');
+      setPoint(kind,parseFloat(best.lat),parseFloat(best.lon),label);
+      setStatus('Trovato: '+best.display_name.split(',').slice(0,3).join(',')); })
+    .catch(function(){setStatus('Ricerca non disponibile: usa il clic sulla mappa.');});
+}
+document.getElementById('goS').onclick=function(){geocode('start');};
+document.getElementById('goE').onclick=function(){geocode('end');};
+document.getElementById('qS').addEventListener('keydown',function(e){if(e.key==='Enter')geocode('start');});
+document.getElementById('qE').addEventListener('keydown',function(e){if(e.key==='Enter')geocode('end');});
+
+// ====== chiamata al motore ======
+function parseTags(str){var o={};(str||"").split(" ").forEach(function(kv){var i=kv.indexOf("=");if(i>0)o[kv.slice(0,i)]=kv.slice(i+1);});return o;}
+function classify(t){
+  var acc=t.motorcycle||t.motor_vehicle||t.access;
+  // solo divieti VERI: "destination" (= no transito) non e' un divieto per noi
+  var bad=["private","no","agricultural","forestry"];
+  var paved0=["asphalt","concrete","paved","paving_stones","sett","cobblestone"];
+  var isPaved = (t.surface&&paved0.indexOf(t.surface)>=0)||t.tracktype==="grade1";
+  if(acc&&bad.indexOf(acc)>=0 && !isPaved) return {level:"nero",color:"#0c0c0c",label:"Forse non legale"};
+  if((t.highway==="path"||t.highway==="bridleway") && !isPaved) return {level:"nero",color:"#0c0c0c",label:"Forse non legale"};
+  var paved=["asphalt","concrete","paved","paving_stones","sett","cobblestone"];
+  if((t.surface&&paved.indexOf(t.surface)>=0)||t.tracktype==="grade1"||["motorway","trunk","primary","secondary","tertiary","residential","living_street"].indexOf(t.highway)>=0)
+    return {level:"rosso",color:"#DB4B3F",label:"Asfalto"};
+  var unpaved=["gravel","fine_gravel","compacted","ground","dirt","earth","unpaved","pebblestone","grass","sand","mud","rock"];
+  if((t.surface&&unpaved.indexOf(t.surface)>=0)||["grade2","grade3","grade4","grade5"].indexOf(t.tracktype)>=0)
+    return {level:"verde",color:"#4CAF6D",label:"Offroad"};
+  return {level:"grigio",color:"#8A93A0",label:"Da verificare"};
+}
+function nearestIdx(coords,lon,lat){var bi=0,bd=1e9;for(var j=0;j<coords.length;j++){var dl=coords[j][0]-lon,da=coords[j][1]-lat,d=dl*dl+da*da;if(d<bd){bd=d;bi=j;}}return bi;}
+function drawColored(coords,messages){
+  var all=coords.map(function(c){return [c[1],c[0]];});
+  lastSegs=[];
+  if(messages&&messages.length>1){
+    var prev=0;
+    for(var i=1;i<messages.length;i++){
+      var r=messages[i], lon=parseInt(r[0],10)/1e6, lat=parseInt(r[1],10)/1e6;
+      var idx=nearestIdx(coords,lon,lat); if(idx<prev)idx=prev;
+      var cls=classify(parseTags(r[9]));
+      var slice=all.slice(prev,idx+1);
+      var km=parseFloat(r[3]||0)/1000;
+      // pendenza media del tratto, dalle quote restituite da BRouter (3o valore)
+      var pend=0;
+      if(coords[prev]&&coords[idx]&&coords[prev].length>2&&coords[idx].length>2&&km>0.02){
+        pend=Math.abs(coords[idx][2]-coords[prev][2])/(km*1000)*100;
+      }
+      if(slice.length>=2) lastSegs.push({level:cls.level,color:cls.color,label:cls.label,ll:slice,km:km,pend:pend});
+      prev=idx;
+    }
+  } else {
+    lastSegs.push({level:"grigio",color:"#39C0ED",label:"Traccia",ll:all,km:0});
+  }
+  renderSegs();
+  map.fitBounds(L.latLngBounds(all).pad(0.15));
+}
+
+function renderSegs(){
+  if(routeLayer)map.removeLayer(routeLayer);
+  routeLayer=L.layerGroup();
+  var all=[]; lastSegs.forEach(function(s){ for(var i=0;i<s.ll.length;i++) all.push(s.ll[i]); });
+  L.polyline(all,{color:"#ffffff",weight:7,opacity:.35}).addTo(routeLayer);
+  lastSegs.forEach(function(s){ if(s.ll.length>=2) L.polyline(s.ll,{color:s.color,weight:4,opacity:1}).addTo(routeLayer); });
+  // tratti ripidi: tratteggio arancione SOPRA il colore del fondo
+  lastSegs.forEach(function(s){
+    var p=s.pend||0;
+    if(s.ll.length>=2 && p>=15){
+      L.polyline(s.ll,{color:"#E8A33D",weight:(p>=25?4:3),opacity:.95,
+                       dashArray:(p>=25?"3,7":"6,9")})
+       .bindTooltip("Pendenza ~"+p.toFixed(0)+"%")
+       .addTo(routeLayer);
+    }
+  });
+  routeLayer.addTo(map);
+  var bd={},order=[];
+  lastSegs.forEach(function(s){ if(!bd[s.level]){bd[s.level]={km:0,color:s.color,label:s.label};order.push(s.level);} bd[s.level].km+=s.km; });
+  var el=document.getElementById("bd"); el.innerHTML="";
+  order.sort(function(a,b){return bd[b].km-bd[a].km;});
+  order.forEach(function(lv){var row=document.createElement("div");row.className="bdrow";
+    row.innerHTML='<span class="sw" style="background:'+bd[lv].color+(lv==="nero"?";outline:1px solid #555":"")+'"></span>'+bd[lv].label+'<span class="k">'+bd[lv].km.toFixed(1)+' km</span>';
+    el.appendChild(row);});
+  var kmRipidi=0; lastSegs.forEach(function(s){ if((s.pend||0)>=15) kmRipidi+=s.km; });
+  if(kmRipidi>0.05){
+    var rw=document.createElement("div"); rw.className="bdrow";
+    rw.innerHTML='<span class="sw" style="background:#E8A33D"></span>di cui ripido (&gt;15%)<span class="k">'+kmRipidi.toFixed(1)+' km</span>';
+    el.appendChild(rw);
+  }
+  // il tasto verifica resta sempre disponibile finche' c'e' una traccia:
+  // dopo un "Rifai" si deve poter ricontrollare il fondo della nuova traccia
+  var vw=document.getElementById("verifyWrap"); if(vw) vw.style.display = lastSegs.length ? "block" : "none";
+  var vb=document.getElementById("verify"); if(vb) vb.disabled=false;
+}
+
+function samplePoints(ll,n){ var out=[]; if(ll.length<=n) return ll.slice(); for(var i=0;i<n;i++){ var t=(i+0.5)/n; out.push(ll[Math.floor(t*(ll.length-1))]); } return out; }
+function majority(arr){ var c={},best=null,bn=0; arr.forEach(function(x){c[x]=(c[x]||0)+1; if(c[x]>bn){bn=c[x];best=x;}}); return best; }
+
+function verifyFond(){
+  var greys=[]; for(var i=0;i<lastSegs.length;i++){ if(lastSegs[i].level==="grigio") greys.push(i); }
+  if(!greys.length){
+    // nessun grigio: ricontrollo comunque i tratti non ancora confermati dal satellite
+    for(var j=0;j<lastSegs.length;j++){ if(lastSegs[j].level!=="verde"&&lastSegs[j].level!=="rosso") greys.push(j); }
+  }
+  if(!greys.length){ toast("Tutti i tratti sono gia' verificati"); return; }
+  var budget=45, per=Math.max(1, Math.min(4, Math.round(budget/greys.length)));
+  var points=[], ranges=[];
+  greys.forEach(function(si){
+    var pts=samplePoints(lastSegs[si].ll, per);
+    var a=points.length;
+    pts.forEach(function(p){ points.push([p[1],p[0]]); }); // [lon,lat]
+    ranges.push([si,a,points.length]);
+  });
+  var btn=document.getElementById("verify"); btn.disabled=true;
+  setStatus("Verifica fondo su "+greys.length+" tratti ("+points.length+" punti)... puo' richiedere fino a un minuto (il sampler potrebbe svegliarsi).");
+  fetch(SAMPLER+"/surface",{method:"POST",body:JSON.stringify({points:points})})
+    .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+    .then(function(j){
+      var res=j.results||[], changed=0;
+      ranges.forEach(function(rg){
+        var si=rg[0], g=[]; for(var k=rg[1];k<rg[2];k++){ if(res[k]&&res[k].guess) g.push(res[k].guess); }
+        var v=majority(g);
+        if(v==="sterrato"){ lastSegs[si].level="verde"; lastSegs[si].color="#4CAF6D"; lastSegs[si].label="Offroad"; changed++; }
+        else if(v==="asfalto"){ lastSegs[si].level="rosso"; lastSegs[si].color="#DB4B3F"; lastSegs[si].label="Asfalto"; changed++; }
+        else if(v==="coperto"){ lastSegs[si].level="verdescuro"; lastSegs[si].color="#1F6B3B"; lastSegs[si].label="Probabile sterrato (coperto)"; changed++; }
+        // coperto/incerto/errore -> resta grigio
+      });
+      renderSegs();
+      var scarti=0; lastSegs.forEach(function(x){ if(x.level==="rosso"||x.level==="grigio") scarti++; });
+      var ow=document.getElementById("optWrap"); if(ow) ow.style.display = scarti ? "block" : "none";
+      setStatus("Fondo verificato dal satellite: "+changed+" tratti su "+greys.length+" risolti.");
+      btn.disabled=false;
+    })
+    .catch(function(e){ setStatus("Verifica fondo non riuscita ("+e.message+"). Riprova tra qualche secondo."); btn.disabled=false; });
+}
+
+function doTrace(){
+  if(!P.start||!P.end)return;
+  var btn=document.getElementById('trace'); btn.disabled=true;
+  setStatus('Calcolo la traccia ('+LABELS[document.getElementById('aggr').value]+')... se il server dormiva, ~1 min');
+  var url=BROUTER+'/brouter?lonlats='+P.start.lng.toFixed(6)+','+P.start.lat.toFixed(6)+'|'+P.end.lng.toFixed(6)+','+P.end.lat.toFixed(6)+'&profile='+profile()+'&format=geojson';
+  if(window.NOGOS && window.NOGOS.length) url += '&nogos='+window.NOGOS.join('|');
+  fetch(url).then(function(r){
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r.json();
+  }).then(function(j){
+    var f=j.features&&j.features[0]; if(!f) throw new Error('risposta vuota');
+    var coords=f.geometry.coordinates;
+    lastCoords=coords.map(function(c){return [c[1],c[0]];});
+    drawColored(coords, f.properties && f.properties.messages);
+    var km = f.properties && f.properties['track-length'] ? (parseFloat(f.properties['track-length'])/1000) : lenKm(lastCoords);
+    document.getElementById('km').innerHTML=km.toFixed(1)+'<small> km</small>';
+    document.getElementById('pts').textContent=lastCoords.length+' punti - '+LABELS[document.getElementById('aggr').value];
+    document.getElementById('result').style.display='block';
+    setStatus('Traccia calcolata: '+km.toFixed(1)+' km ('+LABELS[document.getElementById('aggr').value]+').');
+    btn.disabled=false;
+  }).catch(function(err){
+    var extra = (window.NOGOS && window.NOGOS.length) ? ' Forse sto evitando troppi tratti: premi "Traccia percorso" per ripartire pulito.' : ' Se il server si svegliava, riprova.';
+    setStatus('Non sono riuscito a calcolare la traccia ('+err.message+').'+extra);
+    btn.disabled=false;
+  });
+}
+document.getElementById('trace').onclick=function(){ resetNogos(); doTrace(); };
+document.getElementById('verify').onclick=verifyFond;
+
+// Passate successive: le zone da evitare si ACCUMULANO e il raggio cresce,
+// cosi' ogni giro spinge il tracciato piu' lontano da asfalto/incerti/non legali.
+window.NOGOS = [];      // elenco cumulativo "lon,lat,raggio"
+window.NOGOKEY = {};    // per non ripetere lo stesso punto
+window.PASS = 0;
+
+function resetNogos(){ window.NOGOS=[]; window.NOGOKEY={}; window.PASS=0; }
+
+function optimize(){
+  window.PASS++;
+  var raggio = Math.min(40 + 25*(window.PASS-1), 120);   // 40, 65, 90, 115, 120...
+  var aggiunti = 0;
+  lastSegs.forEach(function(sg){
+    if(sg.level==="rosso"||sg.level==="grigio"||sg.level==="nero"||(sg.pend||0)>=25){
+      // per i tratti lunghi metto piu' punti, cosi' non li riprende da un altro capo
+      var idx=[Math.floor(sg.ll.length/2)];
+      if(sg.km>0.6){ idx=[Math.floor(sg.ll.length*0.25),Math.floor(sg.ll.length*0.5),Math.floor(sg.ll.length*0.75)]; }
+      idx.forEach(function(i){
+        var m=sg.ll[i]; if(!m) return;
+        var key=m[0].toFixed(4)+","+m[1].toFixed(4);
+        if(window.NOGOKEY[key]) return;
+        window.NOGOKEY[key]=true;
+        window.NOGOS.push(m[1].toFixed(5)+","+m[0].toFixed(5)+","+raggio);
+        aggiunti++;
+      });
+    }
+  });
+  if(!window.NOGOS.length){ toast("Niente da evitare"); return; }
+  if(window.NOGOS.length>40){ window.NOGOS=window.NOGOS.slice(-40); }  // tetto di sicurezza
+  setStatus("Passata "+window.PASS+": evito "+window.NOGOS.length+" zone (raggio "+raggio+" m) e alzo la penalita' asfalto al livello \""+LABELS[Math.min(3,parseInt(document.getElementById("aggr").value,10)+window.PASS)]+"\"...");
+  doTrace();
+}
+document.getElementById('optimize').onclick=optimize;
+
+// slider: aggiorna etichetta e, se una traccia c'e' gia', ricalcola
+document.getElementById('aggr').addEventListener('input',function(){
+  document.getElementById('aggrLbl').textContent=LABELS[this.value];
+});
+document.getElementById('aggr').addEventListener('change',function(){
+  document.getElementById('aggrLbl').textContent=LABELS[this.value];
+  if(lastCoords && P.start && P.end){ doTrace(); }
+});
+
+function lenKm(ll){var d=0;for(var i=1;i<ll.length;i++){var R=6371,a=ll[i-1],b=ll[i];var dLat=(b[0]-a[0])*Math.PI/180,dLon=(b[1]-a[1])*Math.PI/180;var s=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);d+=2*R*Math.asin(Math.sqrt(s));}return d;}
+
+function buildGPX(){
+  var w=function(p,n){return '  <wpt lat="'+p.lat.toFixed(6)+'" lon="'+p.lng.toFixed(6)+'"><name>'+n+'</name></wpt>\n';};
+  var pts=lastCoords.map(function(c){return '      <trkpt lat="'+c[0].toFixed(6)+'" lon="'+c[1].toFixed(6)+'"></trkpt>';}).join('\n');
+  return '<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Tracciatori Carbonari" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>Percorso offroad</name></metadata>\n'+w(P.start,'Partenza')+w(P.end,'Arrivo')+'  <trk><name>Percorso offroad</name>\n    <trkseg>\n'+pts+'\n    </trkseg>\n  </trk>\n</gpx>';
+}
+document.getElementById('dl').onclick=function(){
+  if(!lastCoords)return;
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([buildGPX()],{type:'application/gpx+xml'}));
+  a.download='percorso-offroad.gpx'; a.click(); URL.revokeObjectURL(a.href);
+  toast('GPX scaricato - aprilo su Garmin');
+};
+document.getElementById('share').onclick=function(){
+  if(!lastCoords)return;
+  window.location.href='mailto:?subject='+encodeURIComponent('Percorso offroad')+'&body='+encodeURIComponent('Traccia generata con Tracciatori Carbonari. Allega il file percorso-offroad.gpx scaricato.');
+};
+</script>
+</body>
+</html>
