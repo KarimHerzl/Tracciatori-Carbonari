@@ -63,15 +63,15 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 <div class="app">
   <aside class="panel">
     <div class="head">
-      <div class="eyebrow">Web · motore proprio</div>
+      <div class="eyebrow">Web Â· motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div class="sub">Massimizza sterrato · traccia sul satellite</div>
+      <div class="sub">Massimizza sterrato Â· traccia sul satellite</div>
     </div>
     <div class="body">
       <div class="block">
         <div class="label">Partenza e arrivo</div>
-        <div class="field"><span class="pin p">P</span><input id="qS" placeholder="Cerca partenza…"><button class="go" id="goS">&#9906;</button></div>
-        <div class="field"><span class="pin a">A</span><input id="qE" placeholder="Cerca arrivo…"><button class="go" id="goE">&#9906;</button></div>
+        <div class="field"><span class="pin p">P</span><input id="qS" placeholder="Cerca partenzaâ€¦"><button class="go" id="goS">&#9906;</button></div>
+        <div class="field"><span class="pin a">A</span><input id="qE" placeholder="Cerca arrivoâ€¦"><button class="go" id="goE">&#9906;</button></div>
         <div class="pointbtns">
           <button class="pb" id="pickS">Fissa partenza</button>
           <button class="pb" id="pickE">Fissa arrivo</button>
@@ -87,6 +87,10 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           <input type="range" min="0" max="3" step="1" value="1" id="aggr">
         </div>
         <div class="info" style="margin-top:6px">Sposta a destra per pescare piu' sterrato (deviazioni piu' lunghe). Se una traccia c'e' gia', si ricalcola da sola.</div>
+        <label class="info" style="display:flex;gap:8px;align-items:center;margin-top:10px;cursor:pointer">
+          <input type="checkbox" id="soloLegali" style="accent-color:var(--brass)">
+          Escludi i tratti vietati (access privato/no)
+        </label>
       </div>
 
       <div class="block">
@@ -151,10 +155,12 @@ var P={start:null,end:null}, armed=null, routeLayer=null, mkS=null, mkE=null, la
 function toast(m){var t=document.getElementById('toast');t.textContent=m;t.style.display='block';setTimeout(function(){t.style.display='none';},2600);}
 function setStatus(m){document.getElementById('status').textContent=m;}
 function icon(kind){return L.divIcon({className:'',html:'<div class="mk '+(kind==='start'?'p':'a')+'"><span>'+(kind==='start'?'P':'A')+'</span></div>',iconSize:[26,26],iconAnchor:[6,24]});}
+var LIVELLI=[10,25,45,75];
 function profile(){
   var base=parseInt(document.getElementById('aggr').value,10);
-  var lvl=Math.min(PROFILES.length-1, base+(window.PASS||0));   // ogni passata alza la durezza
-  return PROFILES[lvl];
+  var lvl=Math.min(LIVELLI.length-1, base+(window.PASS||0));   // ogni passata alza la durezza
+  var soloLegali=document.getElementById('soloLegali').checked;
+  return (soloLegali?'offroad-legal-':'offroad-max-')+LIVELLI[lvl];
 }
 
 function setPoint(kind,lat,lng,label){
@@ -380,6 +386,9 @@ function optimize(){
   doTrace();
 }
 document.getElementById('optimize').onclick=optimize;
+document.getElementById('soloLegali').addEventListener('change',function(){
+  if(lastCoords && P.start && P.end) doTrace();
+});
 
 // slider: aggiorna etichetta e, se una traccia c'e' gia', ricalcola
 document.getElementById('aggr').addEventListener('input',function(){
