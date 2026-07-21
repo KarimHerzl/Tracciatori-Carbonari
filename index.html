@@ -56,6 +56,17 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 .bdrow{display:flex;align-items:center;gap:8px;font-size:11.5px}
 .bdrow .sw{width:14px}
 .bdrow .k{font-family:'JetBrains Mono';color:var(--dim);margin-left:auto;font-size:11px}
+#panelTgl{display:none}
+@media (max-width: 768px){
+  .app{flex-direction:column}
+  .map{order:1;height:58%;flex:none}
+  .panel{order:2;width:100%;min-width:0;height:42%;border-right:0;border-top:1px solid var(--line)}
+  .panel.mini{height:56px}
+  .panel.mini .body{display:none}
+  #panelTgl{display:inline-block;float:right;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer}
+  .head{padding:10px 14px}
+  h1{font-size:19px}
+}
 .toast{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--brass);color:var(--ink);padding:10px 16px;border-radius:8px;font-size:13px;z-index:2000}
 </style>
 </head>
@@ -63,27 +74,28 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 <div class="app">
   <aside class="panel">
     <div class="head">
-      <div class="eyebrow">Web Â· motore proprio</div>
+      <button id="panelTgl">Mappa</button>
+      <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div class="sub">Massimizza sterrato Â· traccia sul satellite</div>
+      <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
       <div class="block">
         <div class="label">Partenza e arrivo</div>
-        <div class="field"><span class="pin p">P</span><input id="qS" placeholder="Cerca partenzaâ€¦"><button class="go" id="goS">&#9906;</button></div>
-        <div class="field"><span class="pin a">A</span><input id="qE" placeholder="Cerca arrivoâ€¦"><button class="go" id="goE">&#9906;</button></div>
+        <div class="field"><span class="pin p">P</span><input id="qS" placeholder="Cerca partenza"><button class="go" id="goS">&gt;</button></div>
+        <div class="field"><span class="pin a">A</span><input id="qE" placeholder="Cerca arrivo"><button class="go" id="goE">&gt;</button></div>
         <div class="pointbtns">
           <button class="pb" id="pickS">Fissa partenza</button>
           <button class="pb" id="pickE">Fissa arrivo</button>
         </div>
         <button class="btn" id="trace" disabled>Traccia percorso</button>
-        <div class="status" id="status">Scegli partenza e arrivo (ricerca o clic sulla mappa), poi &laquo;Traccia percorso&raquo;.</div>
+        <div class="status" id="status">Scegli partenza e arrivo (ricerca o clic sulla mappa), poi "Traccia percorso".</div>
       </div>
 
       <div class="block">
         <div class="label">Evita l'asfalto</div>
         <div class="slider">
-          <div class="row"><span>&#9666; piu' diretto</span><b id="aggrLbl">equilibrato</b><span>piu' sterrato &#9656;</span></div>
+          <div class="row"><span>&lt; piu' diretto</span><b id="aggrLbl">equilibrato</b><span>piu' sterrato &gt;</span></div>
           <input type="range" min="0" max="3" step="1" value="1" id="aggr">
         </div>
         <div class="info" style="margin-top:6px">Sposta a destra per pescare piu' sterrato (deviazioni piu' lunghe). Se una traccia c'e' gia', si ricalcola da sola.</div>
@@ -118,10 +130,10 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           <div class="m" id="pts">&mdash; punti</div>
           <div class="bd" id="bd"></div>
         </div>
-        <div id="verifyWrap" style="display:none"><button class="act" id="verify">&#9673;  Verifica fondo (satellite)</button></div>
-        <div id="optWrap" style="display:none"><button class="act" id="optimize">&#8635;  Rifai evitando asfalto e incerti</button></div>
-        <button class="act" id="dl">&#11015;  Scarica GPX (per Garmin)</button>
-        <button class="act" id="share">&#9993;  Invia via email</button>
+        <div id="verifyWrap" style="display:none"><button class="act" id="verify">Verifica fondo (satellite)</button></div>
+        <div id="optWrap" style="display:none"><button class="act" id="optimize">Rifai evitando asfalto e incerti</button></div>
+        <button class="act" id="dl">Scarica GPX (per Garmin)</button>
+        <button class="act" id="share">Invia via email</button>
       </div>
 
       <div class="block">
@@ -391,6 +403,13 @@ function optimize(){
   doTrace();
 }
 document.getElementById('optimize').onclick=optimize;
+document.getElementById('panelTgl').onclick=function(){
+  var p=document.querySelector('.panel');
+  p.classList.toggle('mini');
+  this.textContent=p.classList.contains('mini')?'Comandi':'Mappa';
+  setTimeout(function(){ map.invalidateSize(); },250);
+};
+window.addEventListener('resize',function(){ setTimeout(function(){ map.invalidateSize(); },250); });
 document.getElementById('soloLegali').addEventListener('change',function(){
   if(lastCoords && P.start && P.end) doTrace();
 });
