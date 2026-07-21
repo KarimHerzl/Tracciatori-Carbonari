@@ -195,9 +195,16 @@ function refreshVias(){
     var row=document.createElement('div'); row.className='viarow';
     var lbl=document.createElement('span');
     lbl.textContent='Tappa '+(i+1)+': '+(v.label||v.lat.toFixed(4)+', '+v.lng.toFixed(4));
+    lbl.style.flex='1';
+    var up=document.createElement('button'); up.textContent='su';
+    up.disabled=(i===0); if(i===0)up.style.opacity='.3';
+    up.onclick=function(){ var t=VIAS[i-1]; VIAS[i-1]=VIAS[i]; VIAS[i]=t; refreshVias(); if(lastCoords&&P.start&&P.end) doTrace(); };
+    var dn=document.createElement('button'); dn.textContent='giu';
+    dn.disabled=(i===VIAS.length-1); if(i===VIAS.length-1)dn.style.opacity='.3';
+    dn.onclick=function(){ var t=VIAS[i+1]; VIAS[i+1]=VIAS[i]; VIAS[i]=t; refreshVias(); if(lastCoords&&P.start&&P.end) doTrace(); };
     var del=document.createElement('button'); del.textContent='togli';
     del.onclick=function(){ map.removeLayer(v.mk); VIAS.splice(i,1); refreshVias(); if(lastCoords&&P.start&&P.end) doTrace(); };
-    row.appendChild(lbl); row.appendChild(del); el.appendChild(row);
+    row.appendChild(lbl); row.appendChild(up); row.appendChild(dn); row.appendChild(del); el.appendChild(row);
   });
 }
 function addVia(lat,lng,label){
