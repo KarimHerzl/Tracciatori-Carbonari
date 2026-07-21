@@ -318,7 +318,12 @@ function verifyFond(){
       renderSegs();
       var scarti=0; lastSegs.forEach(function(x){ if(x.level==="rosso"||x.level==="grigio") scarti++; });
       var ow=document.getElementById("optWrap"); if(ow) ow.style.display = scarti ? "block" : "none";
-      setStatus("Fondo verificato dal satellite: "+changed+" tratti su "+greys.length+" risolti.");
+      // diagnostica: cosa ha risposto davvero il sampler
+      var conteggio={};
+      res.forEach(function(r){ var k=(r&&r.guess)||"vuoto"; conteggio[k]=(conteggio[k]||0)+1; });
+      var dettaglio=Object.keys(conteggio).map(function(k){return k+": "+conteggio[k];}).join(", ");
+      var primoErr=""; for(var q=0;q<res.length;q++){ if(res[q]&&res[q].err){ primoErr=" | errore: "+res[q].err; break; } }
+      setStatus("Fondo verificato: "+changed+"/"+greys.length+" risolti. Risposte -> "+dettaglio+primoErr);
       btn.disabled=false;
     })
     .catch(function(e){ setStatus("Verifica fondo non riuscita ("+e.message+"). Riprova tra qualche secondo."); btn.disabled=false; });
