@@ -196,15 +196,16 @@ function refreshVias(){
     var lbl=document.createElement('span');
     lbl.textContent='Tappa '+(i+1)+': '+(v.label||v.lat.toFixed(4)+', '+v.lng.toFixed(4));
     var del=document.createElement('button'); del.textContent='togli';
-    del.onclick=function(){ map.removeLayer(v.mk); VIAS.splice(i,1); refreshVias(); };
+    del.onclick=function(){ map.removeLayer(v.mk); VIAS.splice(i,1); refreshVias(); if(lastCoords&&P.start&&P.end) doTrace(); };
     row.appendChild(lbl); row.appendChild(del); el.appendChild(row);
   });
 }
 function addVia(lat,lng,label){
   var v={lat:lat,lng:lng,label:label||null};
   v.mk=L.marker([lat,lng],{icon:viaIcon(VIAS.length+1),draggable:true}).addTo(map);
-  v.mk.on('dragend',function(){var p=v.mk.getLatLng();v.lat=p.lat;v.lng=p.lng;v.label=null;refreshVias();});
+  v.mk.on('dragend',function(){var p=v.mk.getLatLng();v.lat=p.lat;v.lng=p.lng;v.label=null;refreshVias(); if(lastCoords&&P.start&&P.end) doTrace();});
   VIAS.push(v); refreshVias();
+  if(lastCoords&&P.start&&P.end) doTrace();
 }
 function setPoint(kind,lat,lng,label){
   var m=(kind==='start'?mkS:mkE); if(m){map.removeLayer(m);}
@@ -398,33 +399,78 @@ function verifyFond(){
     .catch(function(e){ setStatus("Verifica fondo non riuscita ("+e.message+"). Riprova tra qualche secondo."); btn.disabled=false; });
 }
 
-function doTrace(){
+async function fetchLeg(a,b,nogos){
+  var lonlats=a.lng.toFixed(6)+','+a.lat.toFixed(6)+'|'+b.lng.toFixed(6)+','+b.lat.toFixed(6);
+  var url=BROUTER+'/brouter?lonlats='+lonlats+'&profile='+profile()+'&format=geojson';
+  if(nogos&&nogos.length) url+='&nogos='+nogos.join('|');
+  var r=await fetch(url);
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  var j=await r.json();
+  var f=j.features&&j.features[0];
+  if(!f) throw new Error('risposta vuota');
+  return f;
+}
+
+// campiona il percorso di una tratta gia' fatta per vietarlo alla tratta dopo
+// (cosi' la tappa non diventa una "puntata e ritorno" sulle stesse strade)
+function sampleAntiback(coords, junctions){
+  var out=[], acc=1e9, last=null;
+  for(var i=0;i<coords.length;i++){
+    var pt=[coords[i][1],coords[i][0]];
+    if(last) acc+=distM(last,pt);
+    last=pt;
+    if(acc>=500){
+      acc=0;
+      var near=false;
+      for(var k=0;k<junctions.length;k++){
+        if(distM(pt,[junctions[k].lat,junctions[k].lng])<700){near=true;break;}
+      }
+      if(!near) out.push(pt[1].toFixed(5)+','+pt[0].toFixed(5)+',30');
+    }
+  }
+  return out;
+}
+
+async function doTrace(){
   if(!P.start||!P.end)return;
   var btn=document.getElementById('trace'); btn.disabled=true;
-  setStatus('Calcolo la traccia ('+LABELS[document.getElementById('aggr').value]+')... se il server dormiva, ~1 min');
   var pts=[P.start].concat(VIAS).concat([P.end]);
-  var lonlats=pts.map(function(p){return p.lng.toFixed(6)+','+p.lat.toFixed(6);}).join('|');
-  var url=BROUTER+'/brouter?lonlats='+lonlats+'&profile='+profile()+'&format=geojson';
-  if(window.NOGOS && window.NOGOS.length) url += '&nogos='+window.NOGOS.join('|');
-  fetch(url).then(function(r){
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    return r.json();
-  }).then(function(j){
-    var f=j.features&&j.features[0]; if(!f) throw new Error('risposta vuota');
-    var coords=f.geometry.coordinates;
-    lastCoords=coords.map(function(c){return [c[1],c[0]];});
-    drawColored(coords, f.properties && f.properties.messages);
-    var km = f.properties && f.properties['track-length'] ? (parseFloat(f.properties['track-length'])/1000) : lenKm(lastCoords);
+  var lbl=LABELS[Math.min(3,parseInt(document.getElementById('aggr').value,10)+(window.PASS||0))];
+  setStatus('Calcolo la traccia ('+lbl+')... se il server dormiva, ~1 min');
+  try{
+    var allCoords=[], allMsgs=null, totKm=0, prevLegs=[];
+    for(var i=0;i<pts.length-1;i++){
+      if(pts.length>2) setStatus('Calcolo tratta '+(i+1)+' di '+(pts.length-1)+' ('+lbl+')...');
+      var antib=[];
+      for(var q=0;q<prevLegs.length;q++){
+        antib=antib.concat(sampleAntiback(prevLegs[q],[pts[i],pts[i+1]]));
+      }
+      antib=antib.slice(0,30);
+      var nog=(window.NOGOS||[]).concat(antib);
+      var f;
+      try{ f=await fetchLeg(pts[i],pts[i+1],nog); }
+      catch(e){ f=await fetchLeg(pts[i],pts[i+1],window.NOGOS||[]); }
+      var coords=f.geometry.coordinates;
+      var msgs=f.properties&&f.properties.messages;
+      if(allMsgs===null){ allMsgs=msgs?msgs.slice():null; }
+      else if(msgs&&msgs.length>1){ allMsgs=allMsgs.concat(msgs.slice(1)); }
+      prevLegs.push(f.geometry.coordinates);
+      if(allCoords.length) coords=coords.slice(1);
+      allCoords=allCoords.concat(coords);
+      if(f.properties&&f.properties['track-length']) totKm+=parseFloat(f.properties['track-length'])/1000;
+    }
+    lastCoords=allCoords.map(function(c){return [c[1],c[0]];});
+    drawColored(allCoords, allMsgs);
+    var km = totKm>0 ? totKm : lenKm(lastCoords);
     document.getElementById('km').innerHTML=km.toFixed(1)+'<small> km</small>';
-    document.getElementById('pts').textContent=lastCoords.length+' punti - '+LABELS[document.getElementById('aggr').value];
+    document.getElementById('pts').textContent=lastCoords.length+' punti - '+lbl+(VIAS.length?(' - '+VIAS.length+' tappe'):'');
     document.getElementById('result').style.display='block';
-    setStatus('Traccia calcolata: '+km.toFixed(1)+' km ('+LABELS[document.getElementById('aggr').value]+').');
-    btn.disabled=false;
-  }).catch(function(err){
+    setStatus('Traccia calcolata: '+km.toFixed(1)+' km ('+lbl+').');
+  }catch(err){
     var extra = (window.NOGOS && window.NOGOS.length) ? ' Forse sto evitando troppi tratti: premi "Traccia percorso" per ripartire pulito.' : ' Se il server si svegliava, riprova.';
     setStatus('Non sono riuscito a calcolare la traccia ('+err.message+').'+extra);
-    btn.disabled=false;
-  });
+  }
+  btn.disabled=false;
 }
 document.getElementById('trace').onclick=function(){ resetNogos(); doTrace(); };
 document.getElementById('verify').onclick=verifyFond;
