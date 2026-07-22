@@ -99,6 +99,8 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           <button class="pb" id="pickV">Aggiungi tappa (clic sulla mappa)</button>
         </div>
         <div id="viaList"></div>
+        <input type="file" id="gpxFile" accept=".gpx,application/gpx+xml" style="display:none">
+        <button class="act" id="loadGpx" style="margin-top:10px">Carica una traccia GPX esistente</button>
         <button class="btn" id="trace" disabled>Traccia percorso</button>
         <div class="status" id="status">Scegli partenza e arrivo (ricerca o clic sulla mappa), poi "Traccia percorso".</div>
       </div>
@@ -550,6 +552,49 @@ document.getElementById('dl').onclick=function(){
   a.download='percorso-offroad.gpx'; a.click(); URL.revokeObjectURL(a.href);
   toast('GPX scaricato - aprilo su Garmin');
 };
+
+// ===== CARICA TRACCIA GPX ESISTENTE =====
+document.getElementById('loadGpx').onclick=function(){document.getElementById('gpxFile').click();};
+document.getElementById('gpxFile').addEventListener('change',function(){
+  var f=this.files[0]; if(!f)return;
+  var rd=new FileReader();
+  rd.onload=function(){ try{ loadTrack(rd.result, f.name); }catch(e){ setStatus('GPX non leggibile: '+e.message); } };
+  rd.readAsText(f);
+  this.value='';
+});
+function loadTrack(xmlText,name){
+  var doc=new DOMParser().parseFromString(xmlText,'application/xml');
+  var pts=doc.getElementsByTagName('trkpt');
+  if(!pts.length) pts=doc.getElementsByTagName('rtept');
+  if(!pts.length) throw new Error('nessun punto traccia nel file');
+  var ll=[];
+  for(var i=0;i<pts.length;i++){
+    var la=parseFloat(pts[i].getAttribute('lat')), lo=parseFloat(pts[i].getAttribute('lon'));
+    if(!isNaN(la)&&!isNaN(lo)) ll.push([la,lo]);
+  }
+  if(ll.length<2) throw new Error('troppo pochi punti validi');
+  lastCoords=ll;
+  setPoint('start',ll[0][0],ll[0][1],'Partenza (da GPX)');
+  setPoint('end',ll[ll.length-1][0],ll[ll.length-1][1],'Arrivo (da GPX)');
+  VIAS.forEach(function(v){map.removeLayer(v.mk);}); VIAS=[]; refreshVias(); resetNogos();
+  var tot=0; for(var j=1;j<ll.length;j++) tot+=distM(ll[j-1],ll[j]);
+  var target=Math.max(300, tot/40);   // tratti da ~300 m, max ~40 (per non affogare il sampler)
+  lastSegs=[]; var acc=0, startIdx=0;
+  for(var k=1;k<ll.length;k++){
+    acc+=distM(ll[k-1],ll[k]);
+    if(acc>=target || k===ll.length-1){
+      var slice=ll.slice(startIdx,k+1);
+      if(slice.length>=2) lastSegs.push({level:'grigio',color:'#8A93A0',label:'Da verificare',ll:slice,km:acc/1000,pend:0});
+      startIdx=k; acc=0;
+    }
+  }
+  renderSegs();
+  map.fitBounds(L.latLngBounds(ll).pad(0.12));
+  document.getElementById('km').innerHTML=(tot/1000).toFixed(1)+'<small> km</small>';
+  document.getElementById('pts').textContent=ll.length+' punti - da GPX: '+name;
+  document.getElementById('result').style.display='block';
+  setStatus('Traccia caricata ('+(tot/1000).toFixed(1)+' km, '+lastSegs.length+' tratti). Premi "Verifica fondo (satellite)".');
+}
 
 // ===== NAVIGAZIONE GPS =====
 var navWatch=null, navMk=null, navAcc=null, navFollow=true, navCum=null, navWarned=false, wakeLock=null;
