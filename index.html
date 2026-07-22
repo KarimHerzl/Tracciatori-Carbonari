@@ -122,8 +122,10 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
         <div class="label">Sfondo</div>
         <div class="seg">
           <button id="bSat" class="on">Satellite</button>
+          <button id="bAgea">AGEA</button>
           <button id="bTopo">Topografica</button>
         </div>
+        <div class="info" style="margin-top:6px">AGEA = le stesse ortofoto regionali lette dalla verifica fondo (cambia da sola per regione).</div>
       </div>
 
       <div class="block">
@@ -173,8 +175,50 @@ var map = L.map('map',{zoomControl:true}).setView([45.11,8.45],11);
 var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Imagery &copy; Esri'});
 var topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17,attribution:'&copy; OpenTopoMap'});
 sat.addTo(map);
-document.getElementById('bSat').onclick=function(){map.removeLayer(topo);sat.addTo(map);this.classList.add('on');document.getElementById('bTopo').classList.remove('on');};
-document.getElementById('bTopo').onclick=function(){map.removeLayer(sat);topo.addTo(map);this.classList.add('on');document.getElementById('bSat').classList.remove('on');};
+// le stesse sorgenti del sampler (Toscana esclusa: il suo servizio e' solo http
+// e i browser lo bloccano dentro una pagina https)
+var AGEA_SRC=[
+ {name:'Piemonte AGEA 2024',bbox:[6.62,44.06,9.21,46.46],url:'https://opengis.csi.it/mp/regp_agea_2024',layer:'regp_agea_2024',styles:''},
+ {name:'Emilia-Romagna AGEA 2023',bbox:[9.15,43.70,12.85,45.15],url:'https://servizigis.regione.emilia-romagna.it/wms/agea2023_rgb',layer:'Agea2023_RGB',styles:''},
+ {name:'Veneto AGEA 2024',bbox:[10.60,44.75,13.10,46.70],url:'https://idt2-geoserver.regione.veneto.it/geoserver/ows',layer:'rv:ortofoto_agea_2024',styles:''},
+ {name:'Friuli VG true-orto 2017-20',bbox:[12.30,45.55,13.95,46.65],url:'https://irdat-ortofoto.regione.fvg.it/geoserver/ortofoto/ows',layer:'trueorto_FVG_1720',styles:''},
+ {name:'Liguria ortofoto 2022',bbox:[7.45,43.75,10.10,44.70],url:'https://geoservizi.regione.liguria.it/geoserver/M2555/ows',layer:'L10401',styles:'10401'},
+ {name:'Sardegna AGEA 2022',bbox:[8.05,38.75,9.90,41.35],url:'https://webgis.regione.sardegna.it/geoserverraster/ows',layer:'raster:Mosaico_2022_GB',styles:'ortofoto_2022'},
+ {name:'Lombardia ortofoto 2012',bbox:[8.45,44.65,11.45,46.65],url:'https://www.cartografia.servizirl.it/arcgis2/services/BaseMap/ortofoto2012UTM/ImageServer/WMSServer',layer:'0',styles:''},
+ {name:'Francia IGN BD ORTHO',bbox:[-5.5,41.0,9.8,51.6],url:'https://data.geopf.fr/wms-r/wms',layer:'ORTHOIMAGERY.ORTHOPHOTOS',styles:''}
+];
+var ageaLayer=null, ageaName='';
+function pickAgea(){
+  var c=map.getCenter();
+  for(var i=0;i<AGEA_SRC.length;i++){
+    var b=AGEA_SRC[i].bbox;
+    if(c.lng>=b[0]&&c.lng<=b[2]&&c.lat>=b[1]&&c.lat<=b[3]) return AGEA_SRC[i];
+  }
+  return null;
+}
+function clearBase(){
+  if(map.hasLayer(sat))map.removeLayer(sat);
+  if(map.hasLayer(topo))map.removeLayer(topo);
+  if(ageaLayer){map.removeLayer(ageaLayer);ageaLayer=null;ageaName='';}
+  ['bSat','bAgea','bTopo'].forEach(function(id){document.getElementById(id).classList.remove('on');});
+}
+function showAgea(){
+  var src=pickAgea();
+  if(!src){ toast('Nessuna ortofoto regionale in questa zona'); return; }
+  clearBase();
+  ageaLayer=L.tileLayer.wms(src.url,{layers:src.layer,styles:src.styles||'',format:'image/jpeg',version:'1.1.1',maxZoom:21,attribution:src.name});
+  ageaLayer.addTo(map); ageaName=src.name;
+  document.getElementById('bAgea').classList.add('on');
+  toast('Ortofoto: '+src.name);
+}
+document.getElementById('bSat').onclick=function(){clearBase();sat.addTo(map);this.classList.add('on');};
+document.getElementById('bTopo').onclick=function(){clearBase();topo.addTo(map);this.classList.add('on');};
+document.getElementById('bAgea').onclick=showAgea;
+map.on('moveend',function(){
+  if(!ageaLayer)return;
+  var srcNow=pickAgea();
+  if(srcNow && srcNow.name!==ageaName) showAgea();
+});
 
 var P={start:null,end:null}, armed=null, routeLayer=null, mkS=null, mkE=null, lastCoords=null, lastSegs=[], VIAS=[];
 
