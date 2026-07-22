@@ -123,9 +123,10 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
         <div class="seg">
           <button id="bSat" class="on">Satellite</button>
           <button id="bAgea">AGEA</button>
-          <button id="bTopo">Topografica</button>
+          <button id="bNir">NIR</button>
+          <button id="bTopo">Topo</button>
         </div>
-        <div class="info" style="margin-top:6px">AGEA = le stesse ortofoto regionali lette dalla verifica fondo (cambia da sola per regione).</div>
+        <div class="info" style="margin-top:6px">AGEA = le stesse ortofoto lette dalla verifica fondo. NIR = infrarosso (solo Piemonte): la vegetazione appare rossa, le strade si staccano meglio.</div>
       </div>
 
       <div class="block">
@@ -200,7 +201,8 @@ function clearBase(){
   if(map.hasLayer(sat))map.removeLayer(sat);
   if(map.hasLayer(topo))map.removeLayer(topo);
   if(ageaLayer){map.removeLayer(ageaLayer);ageaLayer=null;ageaName='';}
-  ['bSat','bAgea','bTopo'].forEach(function(id){document.getElementById(id).classList.remove('on');});
+  if(nirLayer){map.removeLayer(nirLayer);nirLayer=null;}
+  ['bSat','bAgea','bNir','bTopo'].forEach(function(id){document.getElementById(id).classList.remove('on');});
 }
 function showAgea(){
   var src=pickAgea();
@@ -214,6 +216,17 @@ function showAgea(){
 document.getElementById('bSat').onclick=function(){clearBase();sat.addTo(map);this.classList.add('on');};
 document.getElementById('bTopo').onclick=function(){clearBase();topo.addTo(map);this.classList.add('on');};
 document.getElementById('bAgea').onclick=showAgea;
+var nirLayer=null;
+document.getElementById('bNir').onclick=function(){
+  var c=map.getCenter();
+  if(!(c.lng>=6.62&&c.lng<=9.21&&c.lat>=44.06&&c.lat<=46.46)){ toast('Il NIR copre solo il Piemonte'); return; }
+  clearBase();
+  nirLayer=L.tileLayer.wms('https://geomap.reteunitaria.piemonte.it/mapproxy/service',
+    {layers:'regp_ortofoto_ice_nir_2010',styles:'',format:'image/jpeg',version:'1.1.1',maxZoom:20,attribution:'ICE NIR 2009-2011 - Regione Piemonte'});
+  nirLayer.addTo(map);
+  document.getElementById('bNir').classList.add('on');
+  toast('Infrarosso ICE 2009-2011 (vegetazione = rosso)');
+};
 map.on('moveend',function(){
   if(!ageaLayer)return;
   var srcNow=pickAgea();
@@ -333,13 +346,22 @@ function classify(t){
   var bad=["private","no","agricultural","forestry"];
   var paved0=["asphalt","concrete","paved","paving_stones","sett","cobblestone"];
   var isPaved = (t.surface&&paved0.indexOf(t.surface)>=0)||t.tracktype==="grade1";
+  var mtb = t["mtb:scale"]!=null ? parseInt(t["mtb:scale"],10) : null;
+  // NERO: divieti veri, sentieri, percorsi escursionistici (sac_scale) o tecnici (mtb alto)
   if(acc&&bad.indexOf(acc)>=0 && !isPaved) return {level:"nero",color:"#0c0c0c",label:"Forse non legale"};
   if((t.highway==="path"||t.highway==="bridleway") && !isPaved) return {level:"nero",color:"#0c0c0c",label:"Forse non legale"};
-  var paved=["asphalt","concrete","paved","paving_stones","sett","cobblestone"];
-  if((t.surface&&paved.indexOf(t.surface)>=0)||t.tracktype==="grade1"||["motorway","trunk","primary","secondary","tertiary","residential","living_street"].indexOf(t.highway)>=0)
+  if((t["sac_scale"]!=null || (mtb!=null&&mtb>=3)) && !isPaved) return {level:"nero",color:"#0c0c0c",label:"Forse non legale"};
+  // ROSSO: fondo pavimentato dichiarato, strade classificate, o smoothness da asfalto
+  var smoothPaved=["excellent","good"];
+  if(isPaved||["motorway","trunk","primary","secondary","tertiary","residential","living_street"].indexOf(t.highway)>=0)
     return {level:"rosso",color:"#DB4B3F",label:"Asfalto"};
   var unpaved=["gravel","fine_gravel","compacted","ground","dirt","earth","unpaved","pebblestone","grass","sand","mud","rock"];
-  if((t.surface&&unpaved.indexOf(t.surface)>=0)||["grade2","grade3","grade4","grade5"].indexOf(t.tracktype)>=0)
+  var isUnpaved=(t.surface&&unpaved.indexOf(t.surface)>=0)||["grade2","grade3","grade4","grade5"].indexOf(t.tracktype)>=0;
+  if(t.smoothness&&smoothPaved.indexOf(t.smoothness)>=0 && !isUnpaved)
+    return {level:"rosso",color:"#DB4B3F",label:"Asfalto"};
+  // VERDE: fondo non pavimentato dichiarato, smoothness da sconnesso, o mtb:scale basso
+  var smoothRough=["bad","very_bad","horrible","very_horrible","impassable"];
+  if(isUnpaved||(t.smoothness&&smoothRough.indexOf(t.smoothness)>=0)||(mtb!=null&&mtb<=2))
     return {level:"verde",color:"#4CAF6D",label:"Offroad"};
   return {level:"grigio",color:"#8A93A0",label:"Da verificare"};
 }
