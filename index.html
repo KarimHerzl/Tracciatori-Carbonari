@@ -351,10 +351,14 @@ function classify(t){
   if(acc&&bad.indexOf(acc)>=0 && !isPaved) return {level:"nero",color:"#0c0c0c",label:"Forse non legale"};
   if((t.highway==="path"||t.highway==="bridleway") && !isPaved) return {level:"nero",color:"#0c0c0c",label:"Forse non legale"};
   if((t["sac_scale"]!=null || (mtb!=null&&mtb>=3)) && !isPaved) return {level:"nero",color:"#0c0c0c",label:"Forse non legale"};
-  // ROSSO: fondo pavimentato dichiarato, strade classificate, o smoothness da asfalto
+  // ROSSO solo con prova di asfalto: fondo pavimentato dichiarato, oppure strade
+  // di rango alto (che sono asfaltate per definizione). Le minori senza "surface"
+  // NON si danno piu' per asfaltate: in campagna spesso sono bianche non taggate.
   var smoothPaved=["excellent","good"];
-  if(isPaved||["motorway","trunk","primary","secondary","tertiary","residential","living_street"].indexOf(t.highway)>=0)
+  if(isPaved||["motorway","trunk","primary","secondary","tertiary"].indexOf(t.highway)>=0)
     return {level:"rosso",color:"#DB4B3F",label:"Asfalto"};
+  if((t.highway==="residential"||t.highway==="living_street") && t.surface==null)
+    return {level:"grigio",color:"#8A93A0",label:"Da verificare"};
   var unpaved=["gravel","fine_gravel","compacted","ground","dirt","earth","unpaved","pebblestone","grass","sand","mud","rock"];
   var isUnpaved=(t.surface&&unpaved.indexOf(t.surface)>=0)||["grade2","grade3","grade4","grade5"].indexOf(t.tracktype)>=0;
   if(t.smoothness&&smoothPaved.indexOf(t.smoothness)>=0 && !isUnpaved)
