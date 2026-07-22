@@ -622,22 +622,75 @@ function loadTrack(xmlText,name){
   setPoint('end',ll[ll.length-1][0],ll[ll.length-1][1],'Arrivo (da GPX)');
   VIAS.forEach(function(v){map.removeLayer(v.mk);}); VIAS=[]; refreshVias(); resetNogos();
   var tot=0; for(var j=1;j<ll.length;j++) tot+=distM(ll[j-1],ll[j]);
-  var target=Math.max(300, tot/40);   // tratti da ~300 m, max ~40 (per non affogare il sampler)
-  lastSegs=[]; var acc=0, startIdx=0;
-  for(var k=1;k<ll.length;k++){
-    acc+=distM(ll[k-1],ll[k]);
-    if(acc>=target || k===ll.length-1){
-      var slice=ll.slice(startIdx,k+1);
-      if(slice.length>=2) lastSegs.push({level:'grigio',color:'#8A93A0',label:'Da verificare',ll:slice,km:acc/1000,pend:0});
-      startIdx=k; acc=0;
-    }
+  matchTrack(ll, tot, name);
+}
+
+// sfoltisce la GPX a un punto ogni ~step metri (piu' primo e ultimo)
+function thinTrack(ll, step){
+  var out=[ll[0]], acc=0;
+  for(var i=1;i<ll.length;i++){
+    acc+=distM(ll[i-1],ll[i]);
+    if(acc>=step){ out.push(ll[i]); acc=0; }
   }
-  renderSegs();
-  map.fitBounds(L.latLngBounds(ll).pad(0.12));
-  document.getElementById('km').innerHTML=(tot/1000).toFixed(1)+'<small> km</small>';
-  document.getElementById('pts').textContent=ll.length+' punti - da GPX: '+name;
-  document.getElementById('result').style.display='block';
-  setStatus('Traccia caricata ('+(tot/1000).toFixed(1)+' km, '+lastSegs.length+' tratti). Premi "Verifica fondo (satellite)".');
+  if(out[out.length-1]!==ll[ll.length-1]) out.push(ll[ll.length-1]);
+  return out;
+}
+
+// riconosce le strade OSM della traccia facendola ricalcare a BRouter (profilo neutro)
+async function matchTrack(ll, tot, name){
+  var step=Math.max(350, tot/140);           // max ~140 punti di aggancio
+  var mp=thinTrack(ll, step);
+  var CH=30;                                  // punti per richiesta (limite indirizzo)
+  var nReq=Math.ceil((mp.length-1)/(CH-1));
+  var allCoords=[], allMsgs=null, ok=true;
+  try{
+    for(var c=0;c<nReq;c++){
+      setStatus('Riconosco le strade OSM della traccia ('+(c+1)+'/'+nReq+')...');
+      var a=c*(CH-1), b=Math.min(a+CH, mp.length);
+      var seg=mp.slice(a,b);
+      if(seg.length<2) break;
+      var lonlats=seg.map(function(p){return p[1].toFixed(6)+','+p[0].toFixed(6);}).join('|');
+      var r=await fetch(BROUTER+'/brouter?lonlats='+lonlats+'&profile=shortest&format=geojson');
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      var j=await r.json();
+      var f=j.features&&j.features[0];
+      if(!f) throw new Error('risposta vuota');
+      var coords=f.geometry.coordinates;
+      var msgs=f.properties&&f.properties.messages;
+      if(allMsgs===null){ allMsgs=msgs?msgs.slice():null; }
+      else if(msgs&&msgs.length>1){ allMsgs=allMsgs.concat(msgs.slice(1)); }
+      if(allCoords.length) coords=coords.slice(1);
+      allCoords=allCoords.concat(coords);
+    }
+  }catch(e){ ok=false; }
+
+  var matchKm = ok&&allCoords.length ? lenKm(allCoords.map(function(c){return [c[1],c[0]];})) : 0;
+  // se l'aggancio devia troppo dalla GPX (percorsi fuori-OSM), meglio i tratti grezzi
+  if(ok && allCoords.length>1 && matchKm < (tot/1000)*1.35){
+    drawColored(allCoords, allMsgs);
+    document.getElementById('km').innerHTML=(tot/1000).toFixed(1)+'<small> km</small>';
+    document.getElementById('pts').textContent=ll.length+' punti - da GPX: '+name+' (tag OSM riconosciuti)';
+    document.getElementById('result').style.display='block';
+    setStatus('Traccia caricata e riconosciuta su OSM ('+(tot/1000).toFixed(1)+' km). I colori vengono dai tag; premi "Verifica fondo" per risolvere i grigi col satellite.');
+  } else {
+    // ripiego: tratti grezzi tutti grigi, verifica solo satellitare
+    var target=Math.max(300, tot/40);
+    lastSegs=[]; var acc=0, startIdx=0;
+    for(var k=1;k<ll.length;k++){
+      acc+=distM(ll[k-1],ll[k]);
+      if(acc>=target || k===ll.length-1){
+        var slice=ll.slice(startIdx,k+1);
+        if(slice.length>=2) lastSegs.push({level:'grigio',color:'#8A93A0',label:'Da verificare',ll:slice,km:acc/1000,pend:0});
+        startIdx=k; acc=0;
+      }
+    }
+    renderSegs();
+    map.fitBounds(L.latLngBounds(ll).pad(0.12));
+    document.getElementById('km').innerHTML=(tot/1000).toFixed(1)+'<small> km</small>';
+    document.getElementById('pts').textContent=ll.length+' punti - da GPX: '+name;
+    document.getElementById('result').style.display='block';
+    setStatus('Traccia caricata ('+(tot/1000).toFixed(1)+' km). '+(ok?'La traccia esce dalle strade OSM: ':'Aggancio OSM non riuscito: ')+'verifica solo satellitare.');
+  }
 }
 
 // ===== NAVIGAZIONE GPS =====
