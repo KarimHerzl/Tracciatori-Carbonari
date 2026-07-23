@@ -81,7 +81,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // una versione diversa, ricarico forzando il salto della cache. Cosi' i beta-tester
 // vedono sempre l'ultima senza dover svuotare la cache a mano.
 (function(){
-  var APP_VERSION='v3-2026-07-22';
+  var APP_VERSION='v4-2026-07-22';
   try{
     var seen=localStorage.getItem('tc_ver');
     if(seen && seen!==APP_VERSION){
@@ -102,7 +102,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build tappe-antiritorno v3</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build ripidi-pagina v4</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -167,6 +167,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           <div class="bd" id="bd"></div>
         </div>
         <div id="verifyWrap" style="display:none"><button class="act" id="verify">Verifica fondo (satellite)</button></div>
+        <div id="steepWrap" style="display:none"><button class="act" id="avoidSteep">Evita i tratti ripidi (&gt;35%)</button></div>
         <div id="optWrap" style="display:none"><button class="act" id="optimize">Rifai evitando asfalto e incerti</button></div>
         <button class="act" id="nav">Naviga (GPS del telefono)</button>
         <button class="act" id="dl">Scarica GPX (per Garmin)</button>
@@ -550,12 +551,15 @@ async function doTrace(){
       if(f.properties&&f.properties['track-length']) totKm+=parseFloat(f.properties['track-length'])/1000;
     }
     lastCoords=allCoords.map(function(c){return [c[1],c[0]];});
+    window.LASTELEV=allCoords;  // lon,lat,ele - per il calcolo pendenza istantanea
     drawColored(allCoords, allMsgs);
     var km = totKm>0 ? totKm : lenKm(lastCoords);
     document.getElementById('km').innerHTML=km.toFixed(1)+'<small> km</small>';
     document.getElementById('pts').textContent=lastCoords.length+' punti - '+lbl+(VIAS.length?(' - '+VIAS.length+' tappe'):'');
     document.getElementById('result').style.display='block';
-    setStatus('Traccia calcolata: '+km.toFixed(1)+' km ('+lbl+').');
+    var nSteep=steepPoints(35).length;
+    var sw=document.getElementById('steepWrap'); if(sw) sw.style.display=nSteep?'block':'none';
+    setStatus('Traccia calcolata: '+km.toFixed(1)+' km ('+lbl+')'+(nSteep?(' - '+nSteep+' punti oltre il 35%: usa "Evita i tratti ripidi"'):'')+'.');
   }catch(err){
     var extra = (window.NOGOS && window.NOGOS.length) ? ' Forse sto evitando troppi tratti: premi "Traccia percorso" per ripartire pulito.' : ' Se il server si svegliava, riprova.';
     setStatus('Non sono riuscito a calcolare la traccia ('+err.message+').'+extra);
@@ -563,6 +567,39 @@ async function doTrace(){
   btn.disabled=false;
 }
 document.getElementById('trace').onclick=function(){ resetNogos(); doTrace(); };
+// trova i punti con pendenza istantanea sopra soglia (muri corti che BRouter non vede)
+function steepPoints(threshold){
+  if(!lastCoords || lastCoords.length<2) return [];
+  // lastCoords e' [lat,lng]; ma le quote stanno in allCoords (lon,lat,ele).
+  // uso la geometria disegnata: ricostruisco da lastSegs che hanno ll con [lat,lng]
+  // e la quota la prendo dai messaggi -> piu' semplice: uso i coords con ele salvati.
+  var pts=[];
+  var C=window.LASTELEV||[];
+  for(var i=1;i<C.length;i++){
+    var a=C[i-1], b=C[i];
+    var d=distM([a[1],a[0]],[b[1],b[0]]);
+    if(d>=8){
+      var g=Math.abs(b[2]-a[2])/d*100;
+      if(g>=threshold) pts.push([b[1],b[0]]);  // [lat,lng]
+    }
+  }
+  return pts;
+}
+document.getElementById('avoidSteep').onclick=function(){
+  var sp=steepPoints(35);
+  if(!sp.length){ toast('Nessun tratto oltre il 35%'); return; }
+  // aggiungo i punti ripidi alle zone da evitare (raggio 25 m) e ricalcolo
+  sp.forEach(function(p){
+    var key='S'+p[0].toFixed(4)+p[1].toFixed(4);
+    if(window.NOGOKEY[key]) return;
+    window.NOGOKEY[key]=true;
+    window.NOGOS.push(p[0].toFixed(5)+','+p[1].toFixed(5)+',25');
+  });
+  if(window.NOGOS.length>60) window.NOGOS=window.NOGOS.slice(-60);
+  setStatus('Ricalcolo evitando '+sp.length+' punti ripidi (>35%)...');
+  doTrace();
+};
+
 document.getElementById('verify').onclick=verifyFond;
 
 // Passate successive: le zone da evitare si ACCUMULANO e il raggio cresce,
