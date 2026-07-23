@@ -493,25 +493,6 @@ async function fetchLeg(a,b,nogos){
   return f;
 }
 
-// campiona il percorso di una tratta gia' fatta per vietarlo alla tratta dopo
-// (cosi' la tappa non diventa una "puntata e ritorno" sulle stesse strade)
-function sampleAntiback(coords, junctions){
-  var out=[], acc=1e9, last=null;
-  for(var i=0;i<coords.length;i++){
-    var pt=[coords[i][1],coords[i][0]];
-    if(last) acc+=distM(last,pt);
-    last=pt;
-    if(acc>=500){
-      acc=0;
-      var near=false;
-      for(var k=0;k<junctions.length;k++){
-        if(distM(pt,[junctions[k].lat,junctions[k].lng])<700){near=true;break;}
-      }
-      if(!near) out.push(pt[1].toFixed(5)+','+pt[0].toFixed(5)+',30');
-    }
-  }
-  return out;
-}
 
 async function doTrace(){
   if(!P.start||!P.end)return;
@@ -520,24 +501,16 @@ async function doTrace(){
   var lbl=LABELS[Math.min(3,parseInt(document.getElementById('aggr').value,10)+(window.PASS||0))];
   setStatus('Calcolo la traccia ('+lbl+')... se il server dormiva, ~1 min');
   try{
-    var allCoords=[], allMsgs=null, totKm=0, prevLegs=[];
+    var allCoords=[], allMsgs=null, totKm=0;
+    // ogni tratta e' calcolata in modo INDIPENDENTE: partenza->tappa1, tappa1->tappa2, ...
     for(var i=0;i<pts.length-1;i++){
       if(pts.length>2) setStatus('Calcolo tratta '+(i+1)+' di '+(pts.length-1)+' ('+lbl+')...');
-      var antib=[];
-      for(var q=0;q<prevLegs.length;q++){
-        antib=antib.concat(sampleAntiback(prevLegs[q],[pts[i],pts[i+1]]));
-      }
-      antib=antib.slice(0,30);
-      var nog=(window.NOGOS||[]).concat(antib);
-      var f;
-      try{ f=await fetchLeg(pts[i],pts[i+1],nog); }
-      catch(e){ f=await fetchLeg(pts[i],pts[i+1],window.NOGOS||[]); }
+      var f=await fetchLeg(pts[i],pts[i+1],window.NOGOS||[]);
       var coords=f.geometry.coordinates;
       var msgs=f.properties&&f.properties.messages;
       if(allMsgs===null){ allMsgs=msgs?msgs.slice():null; }
       else if(msgs&&msgs.length>1){ allMsgs=allMsgs.concat(msgs.slice(1)); }
-      prevLegs.push(f.geometry.coordinates);
-      if(allCoords.length) coords=coords.slice(1);
+      if(allCoords.length) coords=coords.slice(1);  // evito il punto doppio alla giunzione
       allCoords=allCoords.concat(coords);
       if(f.properties&&f.properties['track-length']) totKm+=parseFloat(f.properties['track-length'])/1000;
     }
