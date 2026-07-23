@@ -81,7 +81,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // una versione diversa, ricarico forzando il salto della cache. Cosi' i beta-tester
 // vedono sempre l'ultima senza dover svuotare la cache a mano.
 (function(){
-  var APP_VERSION='v4-2026-07-22';
+  var APP_VERSION='v5-2026-07-22';
   try{
     var seen=localStorage.getItem('tc_ver');
     if(seen && seen!==APP_VERSION){
@@ -102,7 +102,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build ripidi-pagina v4</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build ripidi-pagina v5</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -397,6 +397,15 @@ function nearestIdx(coords,lon,lat){var bi=0,bd=1e9;for(var j=0;j<coords.length;
 function drawColored(coords,messages){
   var all=coords.map(function(c){return [c[1],c[0]];});
   lastSegs=[];
+  // punti a pendenza istantanea >35% (muri corti): stessa fonte del tratteggio arancio.
+  window.STEEPPTS=[];
+  for(var si=1;si<coords.length;si++){
+    var A=coords[si-1], B=coords[si];
+    if(A.length>2 && B.length>2){
+      var dd=distM([A[1],A[0]],[B[1],B[0]]);
+      if(dd>=8 && Math.abs(B[2]-A[2])/dd*100>=35) window.STEEPPTS.push([B[1],B[0]]);
+    }
+  }
   if(messages&&messages.length>1){
     var prev=0;
     for(var i=1;i<messages.length;i++){
@@ -569,21 +578,7 @@ async function doTrace(){
 document.getElementById('trace').onclick=function(){ resetNogos(); doTrace(); };
 // trova i punti con pendenza istantanea sopra soglia (muri corti che BRouter non vede)
 function steepPoints(threshold){
-  if(!lastCoords || lastCoords.length<2) return [];
-  // lastCoords e' [lat,lng]; ma le quote stanno in allCoords (lon,lat,ele).
-  // uso la geometria disegnata: ricostruisco da lastSegs che hanno ll con [lat,lng]
-  // e la quota la prendo dai messaggi -> piu' semplice: uso i coords con ele salvati.
-  var pts=[];
-  var C=window.LASTELEV||[];
-  for(var i=1;i<C.length;i++){
-    var a=C[i-1], b=C[i];
-    var d=distM([a[1],a[0]],[b[1],b[0]]);
-    if(d>=8){
-      var g=Math.abs(b[2]-a[2])/d*100;
-      if(g>=threshold) pts.push([b[1],b[0]]);  // [lat,lng]
-    }
-  }
-  return pts;
+  return window.STEEPPTS || [];
 }
 document.getElementById('avoidSteep').onclick=function(){
   var sp=steepPoints(35);
