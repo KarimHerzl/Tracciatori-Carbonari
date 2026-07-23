@@ -81,7 +81,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // una versione diversa, ricarico forzando il salto della cache. Cosi' i beta-tester
 // vedono sempre l'ultima senza dover svuotare la cache a mano.
 (function(){
-  var APP_VERSION='v6-2026-07-22';
+  var APP_VERSION='v7-2026-07-22';
   try{
     var seen=localStorage.getItem('tc_ver');
     if(seen && seen!==APP_VERSION){
@@ -102,7 +102,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build ripidi-pagina v6</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build ripidi-nogo-fini v7</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -513,9 +513,13 @@ function verifyFond(){
 
 async function fetchLeg(a,b,nogos){
   var lonlats=a.lng.toFixed(6)+','+a.lat.toFixed(6)+'|'+b.lng.toFixed(6)+','+b.lat.toFixed(6);
-  var url=BROUTER+'/brouter?lonlats='+lonlats+'&profile='+profile()+'&format=geojson';
-  if(nogos&&nogos.length) url+='&nogos='+nogos.join('|');
-  var r=await fetch(url);
+  function build(ng){ var u=BROUTER+'/brouter?lonlats='+lonlats+'&profile='+profile()+'&format=geojson'; if(ng&&ng.length) u+='&nogos='+ng.join('|'); return u; }
+  var r=await fetch(build(nogos));
+  // se 400 (spesso: troppi nogo), ritento con meta' dei nogo, poi senza
+  if(r.status===400 && nogos && nogos.length){
+    r=await fetch(build(nogos.slice(-Math.floor(nogos.length/2))));
+    if(r.status===400) r=await fetch(build([]));
+  }
   if(!r.ok) throw new Error('HTTP '+r.status);
   var j=await r.json();
   var f=j.features&&j.features[0];
@@ -583,15 +587,20 @@ function steepPoints(threshold){
 document.getElementById('avoidSteep').onclick=function(){
   var sp=steepPoints(35);
   if(!sp.length){ toast('Nessun tratto oltre il 35%'); return; }
-  // aggiungo i punti ripidi alle zone da evitare (raggio 25 m) e ricalcolo
+  // nogo PICCOLI (12 m) e ravvicinati fusi in uno solo: cosi' blocco la rampa
+  // ma lascio aperto il bypass vicino, invece di murare tutto il settore.
+  var added=0, lastP=null;
   sp.forEach(function(p){
+    if(lastP && distM(p,lastP)<40) return;   // salto i punti troppo vicini al precedente
+    lastP=p;
     var key='S'+p[0].toFixed(4)+p[1].toFixed(4);
     if(window.NOGOKEY[key]) return;
     window.NOGOKEY[key]=true;
-    window.NOGOS.push(p[1].toFixed(5)+','+p[0].toFixed(5)+',25');  // lon,lat,raggio
+    window.NOGOS.push(p[1].toFixed(5)+','+p[0].toFixed(5)+',12');  // lon,lat,raggio piccolo
+    added++;
   });
-  if(window.NOGOS.length>60) window.NOGOS=window.NOGOS.slice(-60);
-  setStatus('Ricalcolo evitando '+sp.length+' punti ripidi (>35%)...');
+  if(window.NOGOS.length>25) window.NOGOS=window.NOGOS.slice(-25);   // tetto piu' basso
+  setStatus('Ricalcolo evitando '+added+' punti ripidi (>35%)...');
   doTrace();
 };
 
@@ -625,7 +634,7 @@ function optimize(){
     }
   });
   if(!window.NOGOS.length){ toast("Niente da evitare"); return; }
-  if(window.NOGOS.length>40){ window.NOGOS=window.NOGOS.slice(-40); }  // tetto di sicurezza
+  if(window.NOGOS.length>25){ window.NOGOS=window.NOGOS.slice(-25); }  // tetto di sicurezza
   setStatus("Passata "+window.PASS+": evito "+window.NOGOS.length+" zone (raggio "+raggio+" m) e alzo la penalita' asfalto al livello \""+LABELS[Math.min(3,parseInt(document.getElementById("aggr").value,10)+window.PASS)]+"\"...");
   doTrace();
 }
