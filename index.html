@@ -81,7 +81,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // una versione diversa, ricarico forzando il salto della cache. Cosi' i beta-tester
 // vedono sempre l'ultima senza dover svuotare la cache a mano.
 (function(){
-  var APP_VERSION='v5-2026-07-22';
+  var APP_VERSION='v6-2026-07-22';
   try{
     var seen=localStorage.getItem('tc_ver');
     if(seen && seen!==APP_VERSION){
@@ -102,7 +102,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build ripidi-pagina v5</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build ripidi-pagina v6</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -588,7 +588,7 @@ document.getElementById('avoidSteep').onclick=function(){
     var key='S'+p[0].toFixed(4)+p[1].toFixed(4);
     if(window.NOGOKEY[key]) return;
     window.NOGOKEY[key]=true;
-    window.NOGOS.push(p[0].toFixed(5)+','+p[1].toFixed(5)+',25');
+    window.NOGOS.push(p[1].toFixed(5)+','+p[0].toFixed(5)+',25');  // lon,lat,raggio
   });
   if(window.NOGOS.length>60) window.NOGOS=window.NOGOS.slice(-60);
   setStatus('Ricalcolo evitando '+sp.length+' punti ripidi (>35%)...');
