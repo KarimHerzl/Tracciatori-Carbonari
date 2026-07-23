@@ -76,6 +76,25 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 </style>
 </head>
 <body>
+<script>
+// AUTO-AGGIORNAMENTO: a ogni deploy cambio APP_VERSION; se il browser ha in memoria
+// una versione diversa, ricarico forzando il salto della cache. Cosi' i beta-tester
+// vedono sempre l'ultima senza dover svuotare la cache a mano.
+(function(){
+  var APP_VERSION='v3-2026-07-22';
+  try{
+    var seen=localStorage.getItem('tc_ver');
+    if(seen && seen!==APP_VERSION){
+      localStorage.setItem('tc_ver',APP_VERSION);
+      if(!location.search.includes('r=')){
+        location.replace(location.pathname+'?r='+Date.now());
+      }
+    } else {
+      localStorage.setItem('tc_ver',APP_VERSION);
+    }
+  }catch(e){}
+})();
+</script>
 <button id="menuFab">Nascondi menu</button>
 <div id="navBar"></div>
 <div class="app">
@@ -83,7 +102,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build tappe-indipendenti v2</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build tappe-antiritorno v3</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -502,16 +521,31 @@ async function doTrace(){
   var lbl=LABELS[Math.min(3,parseInt(document.getElementById('aggr').value,10)+(window.PASS||0))];
   setStatus('Calcolo la traccia ('+lbl+')... se il server dormiva, ~1 min');
   try{
-    var allCoords=[], allMsgs=null, totKm=0;
-    // ogni tratta e' calcolata in modo INDIPENDENTE: partenza->tappa1, tappa1->tappa2, ...
+    var allCoords=[], allMsgs=null, totKm=0, usedNogos=[];
+    // ogni tratta e' calcolata separatamente; le tratte successive EVITANO
+    // le strade gia' percorse, cosi' non si torna indietro sullo stesso tracciato.
     for(var i=0;i<pts.length-1;i++){
       if(pts.length>2) setStatus('Calcolo tratta '+(i+1)+' di '+(pts.length-1)+' ('+lbl+')...');
-      var f=await fetchLeg(pts[i],pts[i+1],window.NOGOS||[]);
+      var legNogos=(window.NOGOS||[]).concat(usedNogos);
+      var f;
+      try{ f=await fetchLeg(pts[i],pts[i+1],legNogos); }
+      catch(e){ f=await fetchLeg(pts[i],pts[i+1],window.NOGOS||[]); }  // se troppo vincolato, ritento libero
       var coords=f.geometry.coordinates;
       var msgs=f.properties&&f.properties.messages;
       if(allMsgs===null){ allMsgs=msgs?msgs.slice():null; }
       else if(msgs&&msgs.length>1){ allMsgs=allMsgs.concat(msgs.slice(1)); }
-      if(allCoords.length) coords=coords.slice(1);  // evito il punto doppio alla giunzione
+      // le strade di questa tratta diventano "da evitare" per le prossime (un punto ogni ~250m)
+      if(i<pts.length-2){
+        var acc=1e9, last=null;
+        for(var k=0;k<coords.length;k++){
+          var pt=[coords[k][1],coords[k][0]];
+          if(last) acc+=distM(last,pt);
+          last=pt;
+          if(acc>=250){ acc=0; usedNogos.push(pt[1].toFixed(5)+','+pt[0].toFixed(5)+',50'); }
+        }
+        if(usedNogos.length>60) usedNogos=usedNogos.slice(-60);
+      }
+      if(allCoords.length) coords=coords.slice(1);
       allCoords=allCoords.concat(coords);
       if(f.properties&&f.properties['track-length']) totKm+=parseFloat(f.properties['track-length'])/1000;
     }
