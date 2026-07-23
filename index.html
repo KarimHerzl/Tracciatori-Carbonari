@@ -2,7 +2,10 @@
 <html lang="it">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Tracciatori Carbonari</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
@@ -76,25 +79,6 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 </style>
 </head>
 <body>
-<script>
-// AUTO-AGGIORNAMENTO: a ogni deploy cambio APP_VERSION; se il browser ha in memoria
-// una versione diversa, ricarico forzando il salto della cache. Cosi' i beta-tester
-// vedono sempre l'ultima senza dover svuotare la cache a mano.
-(function(){
-  var APP_VERSION='v7-2026-07-22';
-  try{
-    var seen=localStorage.getItem('tc_ver');
-    if(seen && seen!==APP_VERSION){
-      localStorage.setItem('tc_ver',APP_VERSION);
-      if(!location.search.includes('r=')){
-        location.replace(location.pathname+'?r='+Date.now());
-      }
-    } else {
-      localStorage.setItem('tc_ver',APP_VERSION);
-    }
-  }catch(e){}
-})();
-</script>
 <button id="menuFab">Nascondi menu</button>
 <div id="navBar"></div>
 <div class="app">
@@ -102,7 +86,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build ripidi-nogo-fini v7</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build ripidi-nogo-fini v8</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
