@@ -446,10 +446,11 @@ function drawColored(coords,messages){
 
 function routeStyleForZoom(){
   var z=map.getZoom();
-  // z<=13 lontano: linea piena e spessa; z>=17 vicino: sottile e trasparente per vedere il fondo
-  if(z>=18) return {weight:2, opacity:.45, halo:0};
-  if(z>=17) return {weight:2.5, opacity:.55, halo:0};
-  if(z>=16) return {weight:3, opacity:.7, halo:3};
+  // z<=13 lontano: linea spessa. Vicino: SOTTILE ma ben VISIBILE (opacita' piena),
+  // cosi' non copre il fondo per larghezza ma resta nitida sul satellitare.
+  if(z>=18) return {weight:2, opacity:1, halo:0};
+  if(z>=17) return {weight:2, opacity:1, halo:0};
+  if(z>=16) return {weight:2.5, opacity:.95, halo:2};
   if(z>=15) return {weight:3.5, opacity:.82, halo:4};
   if(z>=14) return {weight:4, opacity:.92, halo:5};
   return {weight:4.5, opacity:1, halo:6};
