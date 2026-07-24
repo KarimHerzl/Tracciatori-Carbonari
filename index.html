@@ -136,10 +136,11 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 
       <div class="block">
         <div class="label">Legenda fondo</div>
-        <div class="leg"><span class="sw" style="background:#4CAF6D"></span>Offroad (sterrato certo)</div>
-        <div class="leg"><span class="sw" style="background:#1F6B3B"></span>Probabile sterrato (coperto/ombra)</div>
-        <div class="leg"><span class="sw" style="background:#8A93A0"></span>Da verificare (senza fondo)</div>
+        <div class="leg"><span class="sw" style="background:#4CAF50"></span>Erba</div>
+        <div class="leg"><span class="sw" style="background:#8B5A2B"></span>Terra</div>
+        <div class="leg"><span class="sw" style="background:#EDE8DA;outline:1px solid #bbb"></span>Sterrato (ghiaia)</div>
         <div class="leg"><span class="sw" style="background:#DB4B3F"></span>Asfalto</div>
+        <div class="leg"><span class="sw" style="background:#8A93A0"></span>Incerto (da verificare)</div>
         <div class="leg"><span class="sw" style="background:#0c0c0c;outline:1px solid #555"></span>Forse non legale</div>
         <div class="leg"><span class="sw" style="background:#E8A33D"></span>Tratteggio arancio = ripido (&gt;15%; fitto = &gt;25%)</div>
       </div>
@@ -389,16 +390,18 @@ function classify(t){
   if(isPaved||["motorway","trunk","primary","secondary","tertiary"].indexOf(t.highway)>=0)
     return {level:"rosso",color:"#DB4B3F",label:"Asfalto"};
   if((t.highway==="residential"||t.highway==="living_street") && t.surface==null)
-    return {level:"grigio",color:"#8A93A0",label:"Da verificare"};
-  var unpaved=["gravel","fine_gravel","compacted","ground","dirt","earth","unpaved","pebblestone","grass","sand","mud","rock"];
-  var isUnpaved=(t.surface&&unpaved.indexOf(t.surface)>=0)||["grade2","grade3","grade4","grade5"].indexOf(t.tracktype)>=0;
-  if(t.smoothness&&smoothPaved.indexOf(t.smoothness)>=0 && !isUnpaved)
-    return {level:"rosso",color:"#DB4B3F",label:"Asfalto"};
-  // VERDE: fondo non pavimentato dichiarato, smoothness da sconnesso, o mtb:scale basso
+    return {level:"incerto",color:"#8A93A0",label:"Incerto"};
+  // fondo dai tag OSM, in famiglie con colori netti
+  var grass=["grass","meadow"];
+  var earth=["ground","dirt","earth","mud","sand"];
+  var gravel=["gravel","fine_gravel","compacted","unpaved","pebblestone","rock"];
+  if(t.surface&&grass.indexOf(t.surface)>=0)  return {level:"erba",color:"#4CAF50",label:"Erba"};
+  if(t.surface&&earth.indexOf(t.surface)>=0)  return {level:"terra",color:"#8B5A2B",label:"Terra"};
+  var isGravel=(t.surface&&gravel.indexOf(t.surface)>=0)||["grade2","grade3","grade4","grade5"].indexOf(t.tracktype)>=0;
   var smoothRough=["bad","very_bad","horrible","very_horrible","impassable"];
-  if(isUnpaved||(t.smoothness&&smoothRough.indexOf(t.smoothness)>=0)||(mtb!=null&&mtb<=2))
-    return {level:"verde",color:"#4CAF6D",label:"Offroad"};
-  return {level:"grigio",color:"#8A93A0",label:"Da verificare"};
+  if(isGravel||(t.smoothness&&smoothRough.indexOf(t.smoothness)>=0)||(mtb!=null&&mtb<=2))
+    return {level:"sterrato",color:"#EDE8DA",label:"Sterrato"};
+  return {level:"incerto",color:"#8A93A0",label:"Incerto"};
 }
 function nearestIdx(coords,lon,lat){var bi=0,bd=1e9;for(var j=0;j<coords.length;j++){var dl=coords[j][0]-lon,da=coords[j][1]-lat,d=dl*dl+da*da;if(d<bd){bd=d;bi=j;}}return bi;}
 function drawColored(coords,messages){
@@ -499,10 +502,10 @@ function samplePoints(ll,n){ var out=[]; if(ll.length<=n) return ll.slice(); for
 function majority(arr){ var c={},best=null,bn=0; arr.forEach(function(x){c[x]=(c[x]||0)+1; if(c[x]>bn){bn=c[x];best=x;}}); return best; }
 
 function verifyFond(){
-  var greys=[]; for(var i=0;i<lastSegs.length;i++){ if(lastSegs[i].level==="grigio") greys.push(i); }
+  var greys=[]; for(var i=0;i<lastSegs.length;i++){ if(lastSegs[i].level==="incerto") greys.push(i); }
   if(!greys.length){
     // nessun grigio: ricontrollo comunque i tratti non ancora confermati dal satellite
-    for(var j=0;j<lastSegs.length;j++){ if(lastSegs[j].level!=="verde"&&lastSegs[j].level!=="rosso") greys.push(j); }
+    for(var j=0;j<lastSegs.length;j++){ if(lastSegs[j].level==="incerto") greys.push(j); }
   }
   if(!greys.length){ toast("Tutti i tratti sono gia' verificati"); return; }
   var budget=45, per=Math.max(1, Math.min(4, Math.round(budget/greys.length)));
@@ -522,13 +525,13 @@ function verifyFond(){
       ranges.forEach(function(rg){
         var si=rg[0], g=[]; for(var k=rg[1];k<rg[2];k++){ if(res[k]&&res[k].guess) g.push(res[k].guess); }
         var v=majority(g);
-        if(v==="sterrato"){ lastSegs[si].level="verde"; lastSegs[si].color="#4CAF6D"; lastSegs[si].label="Offroad"; changed++; }
+        if(v==="erba"){ lastSegs[si].level="erba"; lastSegs[si].color="#4CAF50"; lastSegs[si].label="Erba"; changed++; }
+        else if(v==="terra"){ lastSegs[si].level="terra"; lastSegs[si].color="#8B5A2B"; lastSegs[si].label="Terra"; changed++; }
         else if(v==="asfalto"){ lastSegs[si].level="rosso"; lastSegs[si].color="#DB4B3F"; lastSegs[si].label="Asfalto"; changed++; }
-        else if(v==="coperto"){ lastSegs[si].level="verdescuro"; lastSegs[si].color="#1F6B3B"; lastSegs[si].label="Probabile sterrato (coperto)"; changed++; }
         // coperto/incerto/errore -> resta grigio
       });
       renderSegs();
-      var scarti=0; lastSegs.forEach(function(x){ if(x.level==="rosso"||x.level==="grigio") scarti++; });
+      var scarti=0; lastSegs.forEach(function(x){ if(x.level==="rosso"||x.level==="incerto") scarti++; });
       var ow=document.getElementById("optWrap"); if(ow) ow.style.display = scarti ? "block" : "none";
       // diagnostica: cosa ha risposto davvero il sampler
       var conteggio={};
@@ -665,7 +668,7 @@ function optimize(){
   var raggio = Math.min(40 + 25*(window.PASS-1), 120);   // 40, 65, 90, 115, 120...
   var aggiunti = 0;
   lastSegs.forEach(function(sg){
-    if(sg.level==="rosso"||sg.level==="grigio"||sg.level==="nero"||(sg.pend||0)>=25){
+    if(sg.level==="rosso"||sg.level==="incerto"||sg.level==="nero"||(sg.pend||0)>=25){
       // per i tratti lunghi metto piu' punti, cosi' non li riprende da un altro capo
       var idx=[Math.floor(sg.ll.length/2)];
       if(sg.km>0.6){ idx=[Math.floor(sg.ll.length*0.25),Math.floor(sg.ll.length*0.5),Math.floor(sg.ll.length*0.75)]; }
