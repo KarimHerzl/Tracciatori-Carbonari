@@ -86,7 +86,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build ripidi-nogo-fini v8</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build coord-linea-g5 v10</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -101,6 +101,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
         <div class="field" style="margin-top:7px"><span class="pin v">T</span><input id="qV" placeholder="Cerca una tappa intermedia..."><button class="go" id="goV">&gt;</button></div>
         <div class="pointbtns">
           <button class="pb" id="pickV">Aggiungi tappa (clic sulla mappa)</button>
+          <button class="pb" id="pickCoord">Copia coordinate di un punto</button>
         </div>
         <div id="viaList"></div>
         <input type="file" id="gpxFile" accept=".gpx,application/gpx+xml" style="display:none">
@@ -299,6 +300,21 @@ map.on('click',function(e){
     document.getElementById('pickV').classList.remove('armed');
     armed=null; return;
   }
+  if(armed==='coord'){
+    var la=e.latlng.lat.toFixed(6), lo=e.latlng.lng.toFixed(6);
+    var txt=la+', '+lo;
+    var html='<div style="font-family:sans-serif;font-size:13px">'
+      +'<b>'+txt+'</b><br>'
+      +'<button onclick="(function(){navigator.clipboard&&navigator.clipboard.writeText(\''+txt+'\');}());this.textContent=\'Copiato!\'" '
+      +'style="margin-top:6px;padding:4px 10px;border:0;border-radius:5px;background:#C9A227;color:#161104;font-weight:700;cursor:pointer">Copia</button> '
+      +'<a href="https://www.google.com/maps?q='+la+','+lo+'" target="_blank" style="margin-left:6px;font-size:12px">Apri in Maps</a>'
+      +'</div>';
+    L.popup().setLatLng(e.latlng).setContent(html).openOn(map);
+    // provo la copia automatica (se il browser lo consente)
+    if(navigator.clipboard) navigator.clipboard.writeText(txt).catch(function(){});
+    document.getElementById('pickCoord').classList.remove('armed');
+    armed=null; return;
+  }
   setPoint(armed,e.latlng.lat,e.latlng.lng,null);
   document.getElementById(armed==='start'?'pickS':'pickE').classList.remove('armed');
   armed=null;
@@ -308,7 +324,14 @@ document.getElementById('pickV').onclick=function(){
   this.classList.toggle('armed',armed==='via');
   document.getElementById('pickS').classList.remove('armed');
   document.getElementById('pickE').classList.remove('armed');
+  document.getElementById('pickCoord').classList.remove('armed');
   setStatus(armed?'Clicca sulla mappa dove vuoi la tappa.':'');
+};
+document.getElementById('pickCoord').onclick=function(){
+  armed=(armed==='coord'?null:'coord');
+  this.classList.toggle('armed',armed==='coord');
+  ['pickS','pickE','pickV'].forEach(function(id){document.getElementById(id).classList.remove('armed');});
+  setStatus(armed?'Clicca sulla mappa per leggere le coordinate.':'');
 };
 document.getElementById('goV').onclick=function(){
   var q=document.getElementById('qV').value.trim(); if(!q)return;
@@ -382,7 +405,7 @@ function drawColored(coords,messages){
   var all=coords.map(function(c){return [c[1],c[0]];});
   lastSegs=[];
   // punti a pendenza istantanea >35% (muri corti): stessa fonte del tratteggio arancio.
-  window.STEEPPTS=[];
+  window.STEEPPTS=[]; window.G5HIGH=[];
   for(var si=1;si<coords.length;si++){
     var A=coords[si-1], B=coords[si];
     if(A.length>2 && B.length>2){
@@ -395,7 +418,12 @@ function drawColored(coords,messages){
     for(var i=1;i<messages.length;i++){
       var r=messages[i], lon=parseInt(r[0],10)/1e6, lat=parseInt(r[1],10)/1e6;
       var idx=nearestIdx(coords,lon,lat); if(idx<prev)idx=prev;
-      var cls=classify(parseTags(r[9]));
+      var tg=parseTags(r[9]);
+      var cls=classify(tg);
+      // grade5 sopra 800 m: raccolgo il punto per l'esclusione automatica
+      if(tg.tracktype==='grade5' && coords[idx]&&coords[idx].length>2 && coords[idx][2]>800){
+        window.G5HIGH=window.G5HIGH||[]; window.G5HIGH.push([lat,lon]);
+      }
       var slice=all.slice(prev,idx+1);
       var km=parseFloat(r[3]||0)/1000;
       // pendenza media del tratto, dalle quote restituite da BRouter (3o valore)
@@ -413,22 +441,40 @@ function drawColored(coords,messages){
   map.fitBounds(L.latLngBounds(all).pad(0.15));
 }
 
+function routeStyleForZoom(){
+  var z=map.getZoom();
+  // z<=13 lontano: linea piena e spessa; z>=17 vicino: sottile e trasparente per vedere il fondo
+  if(z>=18) return {weight:2, opacity:.45, halo:0};
+  if(z>=17) return {weight:2.5, opacity:.55, halo:0};
+  if(z>=16) return {weight:3, opacity:.7, halo:3};
+  if(z>=15) return {weight:3.5, opacity:.82, halo:4};
+  if(z>=14) return {weight:4, opacity:.92, halo:5};
+  return {weight:4.5, opacity:1, halo:6};
+}
+function drawRouteLines(){
+  if(!routeLayer||!lastSegs.length) return;
+  // pulisco solo le linee della traccia (non i marker)
+  routeLayer.eachLayer(function(l){ if(l instanceof L.Polyline) routeLayer.removeLayer(l); });
+  var st=routeStyleForZoom();
+  if(st.halo>0 && window._allLine) L.polyline(window._allLine,{color:"#ffffff",weight:st.weight+st.halo,opacity:st.opacity*0.35}).addTo(routeLayer);
+  lastSegs.forEach(function(s){ if(s.ll.length>=2) L.polyline(s.ll,{color:s.color,weight:st.weight,opacity:st.opacity}).addTo(routeLayer); });
+  lastSegs.forEach(function(s){
+    var p=s.pend||0;
+    if(s.ll.length>=2 && p>=15){
+      L.polyline(s.ll,{color:"#E8A33D",weight:(p>=25?st.weight:st.weight-1),opacity:.9,dashArray:(p>=25?"3,7":"6,9")})
+       .bindTooltip("Pendenza ~"+p.toFixed(0)+"%").addTo(routeLayer);
+    }
+  });
+}
+map.on('zoomend',drawRouteLines);
+
 function renderSegs(){
   if(routeLayer)map.removeLayer(routeLayer);
   routeLayer=L.layerGroup();
   var all=[]; lastSegs.forEach(function(s){ for(var i=0;i<s.ll.length;i++) all.push(s.ll[i]); });
-  L.polyline(all,{color:"#ffffff",weight:7,opacity:.35}).addTo(routeLayer);
-  lastSegs.forEach(function(s){ if(s.ll.length>=2) L.polyline(s.ll,{color:s.color,weight:4,opacity:1}).addTo(routeLayer); });
-  // tratti ripidi: tratteggio arancione SOPRA il colore del fondo
-  lastSegs.forEach(function(s){
-    var p=s.pend||0;
-    if(s.ll.length>=2 && p>=15){
-      L.polyline(s.ll,{color:"#E8A33D",weight:(p>=25?4:3),opacity:.95,
-                       dashArray:(p>=25?"3,7":"6,9")})
-       .bindTooltip("Pendenza ~"+p.toFixed(0)+"%")
-       .addTo(routeLayer);
-    }
-  });
+  window._allLine=all;
+  drawRouteLines();
+
   routeLayer.addTo(map);
   var bd={},order=[];
   lastSegs.forEach(function(s){ if(!bd[s.level]){bd[s.level]={km:0,color:s.color,label:s.label};order.push(s.level);} bd[s.level].km+=s.km; });
@@ -554,6 +600,22 @@ async function doTrace(){
     document.getElementById('km').innerHTML=km.toFixed(1)+'<small> km</small>';
     document.getElementById('pts').textContent=lastCoords.length+' punti - '+lbl+(VIAS.length?(' - '+VIAS.length+' tappe'):'');
     document.getElementById('result').style.display='block';
+    // ESCLUSIONE AUTOMATICA grade5 sopra 800 m (una sola volta per calcolo)
+    if(!window._g5done && window.G5HIGH && window.G5HIGH.length){
+      window._g5done=true;
+      var addedG5=0;
+      window.G5HIGH.forEach(function(p){
+        var key='G'+p[0].toFixed(4)+p[1].toFixed(4);
+        if(window.NOGOKEY[key]) return; window.NOGOKEY[key]=true;
+        window.NOGOS.push(p[1].toFixed(5)+','+p[0].toFixed(5)+',20'); addedG5++;
+      });
+      if(window.NOGOS.length>25) window.NOGOS=window.NOGOS.slice(-25);
+      if(addedG5){
+        setStatus('Escludo '+addedG5+' tratti grade5 sopra 800 m e ricalcolo...');
+        btn.disabled=false;
+        return doTrace();
+      }
+    }
     var nSteep=steepPoints(35).length;
     var sw=document.getElementById('steepWrap'); if(sw) sw.style.display=nSteep?'block':'none';
     setStatus('Traccia calcolata: '+km.toFixed(1)+' km ('+lbl+')'+(nSteep?(' - '+nSteep+' punti oltre il 35%: usa "Evita i tratti ripidi"'):'')+'.');
@@ -596,7 +658,7 @@ window.NOGOS = [];      // elenco cumulativo "lon,lat,raggio"
 window.NOGOKEY = {};    // per non ripetere lo stesso punto
 window.PASS = 0;
 
-function resetNogos(){ window.NOGOS=[]; window.NOGOKEY={}; window.PASS=0; }
+function resetNogos(){ window.NOGOS=[]; window.NOGOKEY={}; window.PASS=0; window._g5done=false; }
 
 function optimize(){
   window.PASS++;
