@@ -6,7 +6,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Tracciatori Carbonari (v31)</title>
+<title>Tracciatori Carbonari (v33)</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -83,7 +83,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // CHECK_VERSION: controlla version.txt (con anti-cache forzato nel fetch, che
 // bypassa anche la CDN di GitHub Pages) e ricarica se e' uscita una versione nuova.
 (function(){
-  var LOCAL='v31';
+  var LOCAL='v33';
   fetch('version.txt?_='+Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.text() : null; })
     .then(function(txt){
@@ -103,7 +103,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build esri-parallelo v31</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build esri-prima v33</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -553,7 +553,6 @@ async function passataEsriAsfalto(){
   // tranne quelli gia' rossi (asfalto) o neri (non legali). Se ESRI dice asfalto
   // certo (soglia a zero falsi), corregge erba/terra/sterrato/incerto in rosso.
   var incerti=[]; for(var i=0;i<lastSegs.length;i++){ var lv=lastSegs[i].level; if(lv!=="rosso"&&lv!=="nero") incerti.push(i); }
-  console.log("[ESRI] tratti da controllare:", incerti.length, "livelli:", incerti.map(function(i){return lastSegs[i].level;}));
   if(!incerti.length) return 0;
   setStatus("Controllo asfalto su ESRI per "+incerti.length+" tratti incerti...");
   // letture ESRI in PARALLELO (con timeout ciascuna): veloce e non si impianta
@@ -563,11 +562,9 @@ async function passataEsriAsfalto(){
   }));
   // scarto i punti senza pixel (ESRI non letto) per non appesantire il POST
   punti=punti.filter(function(p){ return p.esri_rgb && p.esri_rgb.length; });
-  console.log("[ESRI] punti pronti:", punti.length, "- invio al sampler...");
   try{
     var r=await fetch(SAMPLER+"/esri/asfalto",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({punti:punti})});
     var j=await r.json();
-    console.log("[ESRI] risposta sampler:", JSON.stringify(j.risultati));
     // raccolgo per idx: se almeno un punto del segmento e' asfalto certo -> rosso
     var asfaltoPer={};
     (j.risultati||[]).forEach(function(res){ if(res.asfalto_certo) asfaltoPer[res.idx]=true; });
@@ -576,31 +573,34 @@ async function passataEsriAsfalto(){
       lastSegs[si].level="rosso"; lastSegs[si].color="#DB4B3F"; lastSegs[si].label="Asfalto (ESRI)";
       cambiati++;
     });
-    console.log("[ESRI] tratti corretti in rosso:", cambiati);
-    var rossiOra=lastSegs.filter(function(x){return x.level==="rosso";}).length;
-    console.log("[ESRI] totale tratti rossi in lastSegs dopo correzione:", rossiOra);
-    if(cambiati){ renderSegs(); drawRouteLines(); console.log("[ESRI] renderSegs chiamato"); }
+    if(cambiati){ renderSegs(); drawRouteLines(); }
     return cambiati;
-  }catch(e){ console.log("[ESRI] ERRORE fetch:", e.message); return 0; }
+  }catch(e){ return 0; }
 }
 
-function verifyFond(){
-  var greys=[]; for(var i=0;i<lastSegs.length;i++){ if(lastSegs[i].level==="incerto") greys.push(i); }
-  if(!greys.length){
-    // nessun grigio: ricontrollo comunque i tratti non ancora confermati dal satellite
-    for(var j=0;j<lastSegs.length;j++){ if(lastSegs[j].level==="incerto") greys.push(j); }
-  }
-  if(!greys.length){ toast("Tutti i tratti sono gia' verificati"); return; }
-  var budget=45, per=Math.max(1, Math.min(4, Math.round(budget/greys.length)));
+async function verifyFond(){
+  if(!lastSegs.length){ toast("Traccia prima un percorso"); return; }
+  setBusy(true);
+
+  // ===== PASSO 1: ESRI decide l'ASFALTO CERTO (la fonte piu' precisa sugli asfalti) =====
+  setStatus("Verifica ESRI (asfalto) in corso...");
+  var nEsri = await passataEsriAsfalto();   // marca in rosso i tratti asfalto-certo
+  renderSegs();
+
+  // ===== PASSO 2: AGEA classifica il RESTO (erba/terra/sterrato), dove e' piu' affidabile =====
+  // considero solo i tratti NON gia' rossi (asfalto ESRI) e NON neri
+  var daVerif=[]; for(var i=0;i<lastSegs.length;i++){ var lv=lastSegs[i].level; if(lv!=="rosso"&&lv!=="nero") daVerif.push(i); }
+  if(!daVerif.length){ setStatus("Verifica completata: "+nEsri+" tratti d'asfalto (ESRI)."); finalizzaVerifica(nEsri,0); setBusy(false); return; }
+
+  var budget=45, per=Math.max(1, Math.min(4, Math.round(budget/daVerif.length)));
   var points=[], ranges=[];
-  greys.forEach(function(si){
+  daVerif.forEach(function(si){
     var pts=samplePoints(lastSegs[si].ll, per);
     var a=points.length;
-    pts.forEach(function(p){ points.push([p[1],p[0]]); }); // [lon,lat]
+    pts.forEach(function(p){ points.push([p[1],p[0]]); });
     ranges.push([si,a,points.length]);
   });
-  setBusy(true);
-  setStatus("Verifica fondo su "+greys.length+" tratti ("+points.length+" punti)... puo' richiedere fino a un minuto (il sampler potrebbe svegliarsi).");
+  setStatus("Verifica AGEA su "+daVerif.length+" tratti ("+points.length+" punti)... il sampler potrebbe svegliarsi.");
   fetch(SAMPLER+"/surface",{method:"POST",body:JSON.stringify({points:points})})
     .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
     .then(function(j){
@@ -611,26 +611,22 @@ function verifyFond(){
         if(v==="erba"){ lastSegs[si].level="erba"; lastSegs[si].color="#4CAF50"; lastSegs[si].label="Erba"; changed++; }
         else if(v==="terra"){ lastSegs[si].level="terra"; lastSegs[si].color="#8B5A2B"; lastSegs[si].label="Terra"; changed++; }
         else if(v==="asfalto"){ lastSegs[si].level="rosso"; lastSegs[si].color="#DB4B3F"; lastSegs[si].label="Asfalto"; changed++; }
-        // coperto/incerto/errore -> resta grigio
+        // incerto/coperto/errore -> resta grigio
       });
       renderSegs();
-      // seconda passata: ESRI marca gli asfalti certi tra gli incerti rimasti
-      passataEsriAsfalto().then(function(nEsri){
-        var scarti=0; lastSegs.forEach(function(x){ if(x.level==="rosso"||x.level==="incerto") scarti++; });
-        var ow=document.getElementById("optWrap"); if(ow) ow.style.display = scarti ? "block" : "none";
-        if(nEsri) setStatus("Verifica completata. ESRI ha riconosciuto "+nEsri+" tratti d'asfalto in piu'. Usa 'Rifai evitando' per evitarli.");
-      });
-      var scarti=0; lastSegs.forEach(function(x){ if(x.level==="rosso"||x.level==="incerto") scarti++; });
-      var ow=document.getElementById("optWrap"); if(ow) ow.style.display = scarti ? "block" : "none";
-      // diagnostica: cosa ha risposto davvero il sampler
+      finalizzaVerifica(nEsri, changed);
       var conteggio={};
       res.forEach(function(r){ var k=(r&&r.guess)||"vuoto"; conteggio[k]=(conteggio[k]||0)+1; });
       var dettaglio=Object.keys(conteggio).map(function(k){return k+": "+conteggio[k];}).join(", ");
-      var primoErr=""; for(var q=0;q<res.length;q++){ if(res[q]&&res[q].err){ primoErr=" | errore: "+res[q].err; break; } }
-      setStatus("Fondo verificato: "+changed+"/"+greys.length+" risolti. Risposte -> "+dettaglio+primoErr);
+      setStatus("Fondo verificato. ESRI asfalto: "+nEsri+" | AGEA: "+changed+"/"+daVerif.length+" risolti. ("+dettaglio+")");
       setBusy(false);
     })
-    .catch(function(e){ setStatus("Verifica fondo non riuscita ("+e.message+"). Riprova tra qualche secondo."); setBusy(false); });
+    .catch(function(e){ setStatus("Verifica AGEA non riuscita ("+e.message+"). ESRI asfalto: "+nEsri+" tratti."); finalizzaVerifica(nEsri,0); setBusy(false); });
+}
+
+function finalizzaVerifica(nEsri, nAgea){
+  var scarti=0; lastSegs.forEach(function(x){ if(x.level==="rosso"||x.level==="incerto") scarti++; });
+  var ow=document.getElementById("optWrap"); if(ow) ow.style.display = scarti ? "block" : "none";
 }
 
 async function fetchLeg(a,b,nogos){
