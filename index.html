@@ -6,7 +6,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Tracciatori Carbonari (v50)</title>
+<title>Tracciatori Carbonari (v51)</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -85,7 +85,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // CHECK_VERSION: controlla version.txt (con anti-cache forzato nel fetch, che
 // bypassa anche la CDN di GitHub Pages) e ricarica se e' uscita una versione nuova.
 (function(){
-  var LOCAL='v50';
+  var LOCAL='v51';
   fetch('version.txt?_='+Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.text() : null; })
     .then(function(txt){
@@ -105,7 +105,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build francia-130 v50</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build mulattiere v51</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -160,7 +160,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
         <div class="leg"><span class="sw" style="background:#EDE8DA;outline:1px solid #bbb"></span>Sterrato (ghiaia)</div>
         <div class="leg"><span class="sw" style="background:#DB4B3F"></span>Asfalto</div>
         <div class="leg"><span class="sw" style="background:#8A93A0"></span>Incerto (da verificare)</div>
-        <div class="leg"><span class="sw" style="background:#0c0c0c;outline:1px solid #555"></span>Forse non legale</div>
+        <div class="leg"><span class="sw" style="background:#0c0c0c;outline:1px solid #555"></span>Da evitare (mulattiera/vietato)</div>
         <div class="leg"><span class="sw" style="background:#E8A33D"></span>Tratteggio arancio = ripido (&gt;15%; fitto = &gt;25%)</div>
       </div>
 
@@ -433,10 +433,26 @@ function classify(t){
   var paved0=["asphalt","concrete","paved","paving_stones","sett","cobblestone"];
   var isPaved = (t.surface&&paved0.indexOf(t.surface)>=0)||t.tracktype==="grade1";
   var mtb = t["mtb:scale"]!=null ? parseInt(t["mtb:scale"],10) : null;
-  // NERO: divieti veri, sentieri, percorsi escursionistici (sac_scale) o tecnici (mtb alto)
-  if(acc&&bad.indexOf(acc)>=0 && !isPaved) return {level:"nero",color:"#0c0c0c",label:"Forse non legale"};
-  if((t.highway==="path"||t.highway==="bridleway") && !isPaved) return {level:"nero",color:"#0c0c0c",label:"Forse non legale"};
-  if((t["sac_scale"]!=null || (mtb!=null&&mtb>=3)) && !isPaved) return {level:"nero",color:"#0c0c0c",label:"Forse non legale"};
+  var larghezza = t.width!=null ? parseFloat(String(t.width).replace(",",".")) : null;
+  var smoothOk=["excellent","good","intermediate"];
+  // NERO = da EVITARE con moto pesante (200 kg): divieti veri, gradini, scale
+  // escursionistiche o percorsi tecnici. E le mulattiere/sentieri, che per una moto
+  // pesante sono un'INCOGNITA (da soli rischiose, su lunga distanza da evitare) --
+  // TRANNE quando i tag le dichiarano larghe e facili (allora restano percorribili).
+  if(acc&&bad.indexOf(acc)>=0 && !isPaved) return {level:"nero",color:"#0c0c0c",label:"Vietato/non legale"};
+  if(t.highway==="footway"||t.highway==="steps"||t.highway==="pedestrian")
+    return {level:"nero",color:"#0c0c0c",label:"Pedonale/scale"};
+  if((t["sac_scale"]!=null || (mtb!=null&&mtb>=3)) && !isPaved)
+    return {level:"nero",color:"#0c0c0c",label:"Tecnico (non adatto)"};
+  if(t.highway==="path"||t.highway==="bridleway"){
+    // esce dall'incognita SOLO se larga (>=2 m) e con fondo dichiarato non-difficile
+    var largaFacile = (larghezza!=null && larghezza>=2.0) &&
+                      (t.smoothness==null || smoothOk.indexOf(t.smoothness)>=0) &&
+                      t["sac_scale"]==null && !(mtb!=null&&mtb>=2);
+    if(!largaFacile)
+      return {level:"nero",color:"#0c0c0c",label:"Mulattiera/sentiero (incognita)"};
+    // se larga e facile prosegue e verra' classificata come sterrato/incerto sotto
+  }
   // ROSSO solo con prova di asfalto: fondo pavimentato dichiarato, oppure strade
   // di rango alto (che sono asfaltate per definizione). Le minori senza "surface"
   // NON si danno piu' per asfaltate: in campagna spesso sono bianche non taggate.
