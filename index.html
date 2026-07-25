@@ -6,7 +6,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Tracciatori Carbonari (v40)</title>
+<title>Tracciatori Carbonari (v41)</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -83,7 +83,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // CHECK_VERSION: controlla version.txt (con anti-cache forzato nel fetch, che
 // bypassa anche la CDN di GitHub Pages) e ricarica se e' uscita una versione nuova.
 (function(){
-  var LOCAL='v40';
+  var LOCAL='v41';
   fetch('version.txt?_='+Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.text() : null; })
     .then(function(txt){
@@ -103,7 +103,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build esri-blocchi v40</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build esri-ondemand v41</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -170,6 +170,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           <div class="bd" id="bd"></div>
         </div>
         <div id="verifyWrap" style="display:none"><button class="act" id="verify">Verifica fondo (satellite)</button></div>
+        <div id="esriPtWrap" style="display:none"><button class="act" id="esriPt">Verifica punto (ESRI)</button></div>
         <div id="steepWrap" style="display:none"><button class="act" id="avoidSteep">Evita i tratti ripidi (&gt;35%)</button></div>
         <div id="optWrap" style="display:none"><button class="act" id="optimize">Rifai evitando asfalto e incerti</button></div>
         <button class="act" id="nav">Naviga (GPS del telefono)</button>
@@ -336,6 +337,12 @@ map.on('click',function(e){
     document.getElementById('pickCoord').classList.remove('armed');
     armed=null; return;
   }
+  if(armed==='esri'){
+    document.getElementById('esriPt').classList.remove('armed');
+    armed=null;
+    verificaPuntoEsri(e.latlng.lat, e.latlng.lng);
+    return;
+  }
   setPoint(armed,e.latlng.lat,e.latlng.lng,null);
   document.getElementById(armed==='start'?'pickS':'pickE').classList.remove('armed');
   armed=null;
@@ -347,6 +354,13 @@ document.getElementById('pickV').onclick=function(){
   document.getElementById('pickE').classList.remove('armed');
   document.getElementById('pickCoord').classList.remove('armed');
   setStatus(armed?'Clicca sulla mappa dove vuoi la tappa.':'');
+};
+document.getElementById('esriPt').onclick=function(){
+  if(!lastSegs.length){ toast("Traccia prima un percorso"); return; }
+  armed=(armed==='esri'?null:'esri');
+  this.classList.toggle('armed',armed==='esri');
+  ['pickS','pickE','pickV','pickCoord'].forEach(function(id){document.getElementById(id).classList.remove('armed');});
+  setStatus(armed?'Clicca un punto della traccia da verificare con ESRI.':'');
 };
 document.getElementById('pickCoord').onclick=function(){
   armed=(armed==='coord'?null:'coord');
@@ -516,6 +530,7 @@ function renderSegs(){
   // il tasto verifica resta sempre disponibile finche' c'e' una traccia:
   // dopo un "Rifai" si deve poter ricontrollare il fondo della nuova traccia
   var vw=document.getElementById("verifyWrap"); if(vw) vw.style.display = lastSegs.length ? "block" : "none";
+  var ew=document.getElementById("esriPtWrap"); if(ew) ew.style.display = lastSegs.length ? "block" : "none";
   var vb=document.getElementById("verify"); if(vb) vb.disabled=false;
 }
 
@@ -523,6 +538,42 @@ function samplePoints(ll,n){ var out=[]; if(ll.length<=n) return ll.slice(); for
 function majority(arr){ var c={},best=null,bn=0; arr.forEach(function(x){c[x]=(c[x]||0)+1; if(c[x]>bn){bn=c[x];best=x;}}); return best; }
 
 // legge i pixel ESRI di un punto dal browser (canvas), per l'asfalto-certo
+// A) verifica ESRI ON-DEMAND: clicca un punto, ESRI dice se e' asfalto certo,
+// e in tal caso marca rosso il TRATTO piu' vicino al punto cliccato.
+async function verificaPuntoEsri(lat, lon){
+  setBusy(true);
+  setStatus("Leggo ESRI sul punto...");
+  // trovo il tratto piu' vicino al click
+  var best=-1, bestD=9999;
+  for(var i=0;i<lastSegs.length;i++){
+    var ll=lastSegs[i].ll; if(!ll) continue;
+    for(var v=0;v<ll.length;v++){
+      var d=distM([ll[v][0],ll[v][1]],[lat,lon]);
+      if(d<bestD){ bestD=d; best=i; }
+    }
+  }
+  if(best<0 || bestD>60){ setStatus("Clicca piu' vicino alla traccia (a meno di 60 m)."); setBusy(false); return; }
+  var px=await leggiEsri(lat, lon);
+  if(!px.length){ setStatus("ESRI non ha risposto per questo punto. Riprova."); setBusy(false); return; }
+  try{
+    var r=await fetch(SAMPLER+"/esri/asfalto",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({punti:[{idx:0,esri_rgb:px}]})});
+    var j=await r.json();
+    var res=(j.risultati||[])[0];
+    if(res && res.asfalto_certo){
+      lastSegs[best].level="rosso"; lastSegs[best].color="#DB4B3F"; lastSegs[best].label="Asfalto (ESRI)";
+      renderSegs();
+      var scarti=0; lastSegs.forEach(function(x){ if(x.level==="rosso"||x.level==="incerto") scarti++; });
+      var ow=document.getElementById("optWrap"); if(ow) ow.style.display = scarti ? "block" : "none";
+      setStatus("ESRI: ASFALTO (warm "+res.warm+", sat "+res.sat+"). Tratto marcato rosso: usa 'Rifai' per evitarlo.");
+    } else if(res){
+      setStatus("ESRI: NON asfalto certo (warm "+res.warm+", sat "+res.sat+"). Il tratto resta com'era.");
+    } else {
+      setStatus("ESRI non ha dato una risposta valida. Riprova.");
+    }
+  }catch(e){ setStatus("Errore ESRI: "+e.message); }
+  setBusy(false);
+}
+
 function leggiEsri(lat, lon){
   return new Promise(function(resolve){
     var R=6378137.0, x=R*lon*Math.PI/180, y=R*Math.log(Math.tan(Math.PI/4+lat*Math.PI/360)), W=50;
@@ -664,16 +715,11 @@ async function passataEsriAsfalto(){
 async function verifyFond(){
   if(!lastSegs.length){ toast("Traccia prima un percorso"); return; }
   setBusy(true);
+  var nEsri = 0;   // ESRI ora e' on-demand (clicca un punto), non scansione automatica
 
-  // ===== PASSO 1: ESRI decide l'ASFALTO CERTO (la fonte piu' precisa sugli asfalti) =====
-  setStatus("Verifica ESRI (asfalto) in corso...");
-  var nEsri = await passataEsriAsfalto();   // marca in rosso i tratti asfalto-certo
-  renderSegs();
-
-  // ===== PASSO 2: AGEA classifica il RESTO (erba/terra/sterrato), dove e' piu' affidabile =====
-  // considero solo i tratti NON gia' rossi (asfalto ESRI) e NON neri
-  var daVerif=[]; for(var i=0;i<lastSegs.length;i++){ var lv=lastSegs[i].level; if(lv!=="rosso"&&lv!=="nero") daVerif.push(i); }
-  if(!daVerif.length){ setStatus("Verifica completata: "+nEsri+" tratti d'asfalto (ESRI)."); finalizzaVerifica(nEsri,0); setBusy(false); return; }
+  // AGEA classifica gli incerti (erba/terra/sterrato/asfalto)
+  var daVerif=[]; for(var i=0;i<lastSegs.length;i++){ var lv=lastSegs[i].level; if(lv==="incerto") daVerif.push(i); }
+  if(!daVerif.length){ setStatus("Nessun tratto incerto da verificare. Per un punto specifico usa 'Verifica punto (ESRI)'."); finalizzaVerifica(0,0); setBusy(false); return; }
 
   var budget=45, per=Math.max(1, Math.min(4, Math.round(budget/daVerif.length)));
   var points=[], ranges=[];
