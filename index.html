@@ -6,7 +6,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Tracciatori Carbonari (v60)</title>
+<title>Tracciatori Carbonari (v61)</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -85,7 +85,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // CHECK_VERSION: controlla version.txt (con anti-cache forzato nel fetch, che
 // bypassa anche la CDN di GitHub Pages) e ricarica se e' uscita una versione nuova.
 (function(){
-  var LOCAL='v60';
+  var LOCAL='v61';
   fetch('version.txt?_='+Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.text() : null; })
     .then(function(txt){
@@ -105,7 +105,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build evita-manuale v60</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build sampler-fine v61</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -148,7 +148,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           <input type="checkbox" id="escludiIllegali" checked style="accent-color:var(--brass)">
           Escludi ciclabili e accessi privati (sempre)
         </label>
-        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v60)</button>
+        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v61)</button>
         <div id="regolePanel" style="display:none;margin-top:8px;padding:10px;background:#f2efe6;border-radius:8px;font-size:12px;line-height:1.5;color:#3a3a3a">
           <b>Regole attive (build v60)</b><br>
           <b>Asfalto (rosso):</b> strade primary/secondary/tertiary; strade comunali (unclassified/residential) senza tag fondo; qualsiasi surface pavimentato; asfalto certo da ESRI (WARM&lt;0.08, SAT&lt;0.17).<br>
@@ -192,6 +192,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           <div class="bd" id="bd"></div>
         </div>
         <div id="verifyWrap" style="display:none"><button class="act" id="verify">Verifica fondo (satellite)</button></div>
+        <div id="verifyFineWrap" style="display:none"><button class="act" id="verifyFine">Verifica fondo FINE (sampler, spezza i grigi)</button></div>
         <div id="esriPtWrap" style="display:none">
           <button class="act" id="corrPt">Correggi fondo di un punto</button>
           <div id="corrPanel" style="display:none;margin-top:6px;padding:8px;background:#f2efe6;border-radius:8px">
@@ -233,6 +234,130 @@ var SAMPLER = "https://sampler-fondo.onrender.com";
 // varianti di durezza sull'asfalto (dallo slider)
 var PROFILES = ["offroad-max-10","offroad-max-25","offroad-max-45","offroad-max-75"];
 var LABELS   = ["piu' diretto","equilibrato","piu' sterrato","massimo"];
+
+// ============================================================================
+// ADAPTER SAMPLER (v61) — sampleLeg(): data la geometria di UNA tratta, campiona
+// la superficie su /surface e la spezza in sotto-segmenti {i0,i1,tag}. Isolato:
+// non tocca doTrace. Domani il modello ad ancore chiamera' questa dentro recompute,
+// ma SOLO sulle tratte 'stale' (per questo il campionamento automatico regge sul
+// free tier). Geometria in ingresso: [[lat,lon],...] (come lastSegs[i].ll).
+// ============================================================================
+(function (root) {
+  'use strict';
+  var SAMPLER_DEFAULT = 'https://sampler-fondo.onrender.com';
+  var SURFACE = {
+    asfalto:  { tag: 'rosso',    color: '#DB4B3F', label: 'Asfalto (sampler)' },
+    sterrato: { tag: 'sterrato', color: '#EDE8DA', label: 'Sterrato (sampler)' },
+    terra:    { tag: 'terra',    color: '#8B5A2B', label: 'Terra (sampler)' },
+    erba:     { tag: 'erba',     color: '#4CAF50', label: 'Erba (sampler)' }
+  };
+  var INCERTO = { tag: 'incerto', color: '#8A93A0', label: 'Incerto' };
+  function mapGuess(g) { return (g && SURFACE[g]) ? SURFACE[g] : INCERTO; }
+  function dM(a, b) {
+    var R = 6371000, dLat = (b[0]-a[0])*Math.PI/180, dLon = (b[1]-a[1])*Math.PI/180,
+        s1 = Math.sin(dLat/2), s2 = Math.sin(dLon/2),
+        q = s1*s1 + Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*s2*s2;
+    return 2*R*Math.asin(Math.sqrt(q));
+  }
+  function legLengthM(ll){ var d=0; for(var i=1;i<ll.length;i++) d+=dM(ll[i-1],ll[i]); return d; }
+  function interpolaCampioni(ll, stepM) {
+    var out = [{ lat: ll[0][0], lon: ll[0][1], vi: 0 }], resto = 0;
+    for (var v = 1; v < ll.length; v++) {
+      var a = ll[v-1], b = ll[v], d = dM(a, b);
+      if (d < 0.01) continue;
+      var pos = resto;
+      while (pos < d) {
+        var t = pos / d, vi = (t < 0.5) ? (v-1) : v;
+        out.push({ lat: a[0]+(b[0]-a[0])*t, lon: a[1]+(b[1]-a[1])*t, vi: vi });
+        pos += stepM;
+      }
+      resto = pos - d;
+    }
+    var last = ll[ll.length-1];
+    out.push({ lat: last[0], lon: last[1], vi: ll.length-1 });
+    return out;
+  }
+  async function chiediSurface(sampler, campioni, blocco, fetchImpl) {
+    var guesses = new Array(campioni.length).fill(null);
+    for (var b = 0; b < campioni.length; b += blocco) {
+      var gruppo = campioni.slice(b, b + blocco);
+      var points = gruppo.map(function (c) { return [c.lon, c.lat]; });
+      var r = await fetchImpl(sampler.replace(/\/+$/, '') + '/surface', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ points: points })
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status + ' su /surface');
+      var j = await r.json(), res = j.results || [];
+      for (var k = 0; k < gruppo.length; k++)
+        guesses[b + k] = (res[k] && res[k].guess) ? res[k].guess : null;
+    }
+    return guesses;
+  }
+  function guessPerVertice(campioni, guesses, nVertici) {
+    var perV = new Array(nVertici).fill(null);
+    for (var i = 0; i < campioni.length; i++) { var g = guesses[i]; if (g) perV[campioni[i].vi] = g; }
+    var ultimo = null;
+    for (var v = 0; v < nVertici; v++) { if (perV[v]) ultimo = perV[v]; else perV[v] = ultimo; }
+    ultimo = null;
+    for (var w = nVertici-1; w >= 0; w--) { if (perV[w]) ultimo = perV[w]; else if (ultimo) perV[w] = ultimo; }
+    return perV;
+  }
+  function costruisciSottoSegmenti(ll, perV, minSubM) {
+    var runs = [], start = 0, cur = perV[0];
+    for (var v = 1; v < perV.length; v++) {
+      if (perV[v] !== cur) { runs.push({ i0: start, i1: v, guess: cur }); start = v; cur = perV[v]; }
+    }
+    runs.push({ i0: start, i1: perV.length-1, guess: cur });
+    function lungRun(r){ var d=0; for(var i=r.i0+1;i<=r.i1;i++) d+=dM(ll[i-1],ll[i]); return d; }
+    var cambiato = true;
+    while (cambiato && runs.length > 1) {
+      cambiato = false;
+      for (var i = 0; i < runs.length; i++) {
+        if (lungRun(runs[i]) >= minSubM) continue;
+        var prev = runs[i-1], next = runs[i+1];
+        var target = (!prev) ? next : (!next) ? prev : (lungRun(prev) >= lungRun(next) ? prev : next);
+        if (!target) continue;
+        target.i0 = Math.min(target.i0, runs[i].i0);
+        target.i1 = Math.max(target.i1, runs[i].i1);
+        runs.splice(i, 1); cambiato = true; break;
+      }
+    }
+    return runs;
+  }
+  async function sampleLeg(geometry, opts) {
+    opts = opts || {};
+    var ll = geometry;
+    if (!ll || ll.length < 2) return { segments: [], stats: { punti: 0, perTag: {} } };
+    var sampler   = opts.sampler   || SAMPLER_DEFAULT;
+    var stepM     = opts.stepM     || 30;
+    var budget    = opts.budget    || 60;
+    var minSubM   = opts.minSubM   || 60;
+    var blocco    = opts.blocco    || 15;
+    var fetchImpl = opts.fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+    if (!fetchImpl) throw new Error('nessun fetch disponibile');
+    var lung = legLengthM(ll), stepEff = Math.max(stepM, lung / budget);
+    var campioni = interpolaCampioni(ll, stepEff);
+    if (campioni.length > budget) {
+      var passo = campioni.length / budget, ridotti = [];
+      for (var i = 0; i < budget; i++) ridotti.push(campioni[Math.floor(i * passo)]);
+      campioni = ridotti;
+    }
+    var guesses = await chiediSurface(sampler, campioni, blocco, fetchImpl);
+    var perV = guessPerVertice(campioni, guesses, ll.length);
+    var runs = costruisciSottoSegmenti(ll, perV, minSubM);
+    var perTag = {};
+    var segments = runs.map(function (r) {
+      var m = mapGuess(r.guess), km = 0;
+      for (var i = r.i0+1; i <= r.i1; i++) km += dM(ll[i-1], ll[i]); km /= 1000;
+      perTag[m.tag] = (perTag[m.tag] || 0) + km;
+      return { i0: r.i0, i1: r.i1, tag: m.tag, color: m.color, label: m.label, km: km };
+    });
+    return { segments: segments, stats: {
+      punti: campioni.filter(function (_, i) { return guesses[i]; }).length,
+      stepEff: Math.round(stepEff), perTag: perTag } };
+  }
+  root.TCsampler = { sampleLeg: sampleLeg, SURFACE: SURFACE };
+})(window);
 
 var map = L.map('map',{zoomControl:true}).setView([45.11,8.45],11);
 var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Imagery &copy; Esri'});
@@ -678,6 +803,7 @@ function renderSegs(){
   // il tasto verifica resta sempre disponibile finche' c'e' una traccia:
   // dopo un "Rifai" si deve poter ricontrollare il fondo della nuova traccia
   var vw=document.getElementById("verifyWrap"); if(vw) vw.style.display = lastSegs.length ? "block" : "none";
+  var vfw=document.getElementById("verifyFineWrap"); if(vfw) vfw.style.display = lastSegs.length ? "block" : "none";
   var ew=document.getElementById("esriPtWrap"); if(ew) ew.style.display = lastSegs.length ? "block" : "none";
   var vb=document.getElementById("verify"); if(vb) vb.disabled=false;
 }
@@ -1064,7 +1190,7 @@ async function fetchLeg(a,b,nogos){
 
 function setBusy(on){
   // disabilita/riabilita tutti i pulsanti d'azione, dando il feedback visivo "sto lavorando"
-  ['trace','verify','optimize','evitaBtn','avoidSteep','loadGpx','pickCoord'].forEach(function(id){
+  ['trace','verify','verifyFine','optimize','evitaBtn','avoidSteep','loadGpx','pickCoord'].forEach(function(id){
     var b=document.getElementById(id);
     if(b){ b.disabled=on; b.style.opacity=on?'0.5':''; b.style.cursor=on?'wait':''; }
   });
@@ -1168,6 +1294,48 @@ document.getElementById('avoidSteep').onclick=function(){
 };
 
 document.getElementById('verify').onclick=verifyFond;
+
+// VERIFICA FONDO FINE (v61): usa TCsampler.sampleLeg per spezzare ogni tratto
+// INCERTO in sotto-segmenti omogenei, invece di ricolorare tutto il tratto con
+// un voto di maggioranza. Additivo: lascia intatti gli altri tratti (OSM), tocca
+// SOLO i grigi -- nessuna regressione. E' la stessa funzione che riusera' il
+// modello ad ancore dentro recompute, qui provata sul comportamento reale.
+async function verifyFineFond(){
+  if(!lastSegs.length){ toast("Traccia prima un percorso"); return; }
+  if(!window.TCsampler){ toast("Adapter sampler non caricato"); return; }
+  setBusy(true);
+  // indici dei tratti incerti (non gia' corretti a mano), dal fondo per non sfasare gli splice
+  var daVerif=[]; for(var i=0;i<lastSegs.length;i++){ if(lastSegs[i].level==="incerto" && !lastSegs[i].corretto) daVerif.push(i); }
+  if(!daVerif.length){ setStatus("Nessun tratto incerto da spezzare. (I colori vengono gia' dai tag OSM.)"); setBusy(false); return; }
+  daVerif.sort(function(a,b){return b-a;});   // dal piu' alto al piu' basso
+  var totSub=0, risolti=0, errori=0;
+  setStatus("Verifica FINE: campiono "+daVerif.length+" tratti incerti col sampler... (il server puo' svegliarsi)");
+  for(var d=0; d<daVerif.length; d++){
+    var si=daVerif[d], seg=lastSegs[si];
+    try{
+      var out=await window.TCsampler.sampleLeg(seg.ll, {stepM:25, budget:20, minSubM:50});
+      var subs=out.segments||[];
+      if(!subs.length){ continue; }
+      // costruisco i nuovi tratti dai sotto-range (indici dentro seg.ll)
+      var rimpiazzo=subs.map(function(s){
+        var ll=seg.ll.slice(s.i0, s.i1+1);
+        return { level:s.tag, color:s.color, label:s.label, ll:ll, km:s.km,
+                 pend:seg.pend||0, quota:seg.quota||0, corretto:false };
+      }).filter(function(x){ return x.ll.length>=2; });
+      if(!rimpiazzo.length){ continue; }
+      // conto quanti sotto-tratti hanno un fondo risolto (non piu' incerto)
+      rimpiazzo.forEach(function(x){ if(x.level!=="incerto") risolti++; });
+      totSub += rimpiazzo.length;
+      Array.prototype.splice.apply(lastSegs, [si,1].concat(rimpiazzo));
+    }catch(e){ errori++; }
+    if(d%3===0) setStatus("Verifica FINE: "+(d+1)+"/"+daVerif.length+" tratti...");
+  }
+  renderSegs();
+  finalizzaVerifica(0, risolti);
+  setStatus("Verifica FINE finita: "+daVerif.length+" tratti incerti -> "+totSub+" sotto-tratti, "+risolti+" risolti"+(errori?(" ("+errori+" errori sampler)"):"")+".");
+  setBusy(false);
+}
+document.getElementById('verifyFine').onclick=verifyFineFond;
 
 // Passate successive: le zone da evitare si ACCUMULANO e il raggio cresce,
 // cosi' ogni giro spinge il tracciato piu' lontano da asfalto/incerti/non legali.
