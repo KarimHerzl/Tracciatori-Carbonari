@@ -6,7 +6,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Tracciatori Carbonari (v67)</title>
+<title>Tracciatori Carbonari (v68)</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -85,7 +85,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // CHECK_VERSION: controlla version.txt (con anti-cache forzato nel fetch, che
 // bypassa anche la CDN di GitHub Pages) e ricarica se e' uscita una versione nuova.
 (function(){
-  var LOCAL='v67';
+  var LOCAL='v68';
   fetch('version.txt?_='+Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.text() : null; })
     .then(function(txt){
@@ -105,7 +105,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build ancore-blocco v67</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build tratte-blocco v68</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -123,6 +123,11 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           <button class="pb" id="pickCoord">Copia coordinate di un punto</button>
         </div>
         <div id="viaList"></div>
+        <div id="legWrap" style="display:none;margin-top:10px">
+          <div class="label">Tratte (blocca quelle buone)</div>
+          <div style="font-size:11px;color:#5a6b5f;margin:2px 0 6px">Le tratte bloccate non vengono piu' ricalcolate: "Rifai" e gli evitamenti lavorano solo sulle altre.</div>
+          <div id="legList"></div>
+        </div>
         <input type="file" id="gpxFile" accept=".gpx,application/gpx+xml" style="display:none">
         <button class="act" id="loadGpx" style="margin-top:10px">Carica una traccia GPX esistente</button>
         <button class="btn" id="trace" disabled>Traccia percorso</button>
@@ -148,7 +153,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           <input type="checkbox" id="escludiIllegali" checked style="accent-color:var(--brass)">
           Escludi ciclabili e accessi privati (sempre)
         </label>
-        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v67)</button>
+        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v68)</button>
         <div id="regolePanel" style="display:none;margin-top:8px;padding:10px;background:#f2efe6;border-radius:8px;font-size:12px;line-height:1.5;color:#3a3a3a">
           <b>Regole attive (build v60)</b><br>
           <b>Asfalto (rosso):</b> strade primary/secondary/tertiary; strade comunali (unclassified/residential) senza tag fondo; qualsiasi surface pavimentato; asfalto certo da ESRI (WARM&lt;0.08, SAT&lt;0.17).<br>
@@ -587,14 +592,8 @@ function refreshVias(){
     v.mk.setIcon(viaIcon(i+1));
     var row=document.createElement('div'); row.className='viarow';
     var lbl=document.createElement('span');
-    lbl.textContent=(v.locked?'[BLOCCATA] ':'')+'Tappa '+(i+1)+': '+(v.label||v.lat.toFixed(4)+', '+v.lng.toFixed(4));
+    lbl.textContent='Tappa '+(i+1)+': '+(v.label||v.lat.toFixed(4)+', '+v.lng.toFixed(4));
     lbl.style.flex='1';
-    if(v.locked) lbl.style.color='#E8B04B';
-    var lk=document.createElement('button');
-    lk.textContent=v.locked?'sblocca':'blocca';
-    lk.title=v.locked?'Libera le tratte di questa tappa':'Congela le tratte che toccano questa tappa: non verranno piu\' ricalcolate';
-    if(v.locked) lk.style.background='#E8B04B';
-    lk.onclick=function(){ toggleLockVia(i); };
     var up=document.createElement('button'); up.textContent='su';
     up.disabled=(i===0); if(i===0)up.style.opacity='.3';
     up.onclick=function(){ var t=VIAS[i-1]; VIAS[i-1]=VIAS[i]; VIAS[i]=t; refreshVias(); if(lastCoords&&P.start&&P.end) doTrace(); };
@@ -603,7 +602,7 @@ function refreshVias(){
     dn.onclick=function(){ var t=VIAS[i+1]; VIAS[i+1]=VIAS[i]; VIAS[i]=t; refreshVias(); if(lastCoords&&P.start&&P.end) doTrace(); };
     var del=document.createElement('button'); del.textContent='togli';
     del.onclick=function(){ map.removeLayer(v.mk); VIAS.splice(i,1); refreshVias(); if(lastCoords&&P.start&&P.end) doTrace(); };
-    row.appendChild(lbl); row.appendChild(lk); row.appendChild(up); row.appendChild(dn); row.appendChild(del); el.appendChild(row);
+    row.appendChild(lbl); row.appendChild(up); row.appendChild(dn); row.appendChild(del); el.appendChild(row);
   });
 }
 function addVia(lat,lng,label){
@@ -1364,31 +1363,88 @@ function pinKey(a,b){
 }
 function pinConta(){ var n=0; for(var k in PIN) if(PIN.hasOwnProperty(k)) n++; return n; }
 
-// blocca/sblocca la tappa i: congela (o libera) le DUE tratte che la toccano
-function toggleLockVia(i){
-  var v=VIAS[i];
+// blocca/sblocca la TRATTA i (fra l'ancora i e la i+1)
+function toggleLockLeg(i){
   var pts=[P.start].concat(VIAS).concat([P.end]);
-  if(!v.locked && !LEGGEO.length){ toast('Calcola prima la traccia: non so ancora cosa congelare'); return; }
-  var idx=[i, i+1];   // tratta che ARRIVA alla tappa e tratta che ne PARTE
-  if(!v.locked){
-    var congelate=0;
-    idx.forEach(function(j){
-      if(j<0 || j>=pts.length-1 || !LEGGEO[j]) return;
-      PIN[pinKey(pts[j],pts[j+1])]=LEGGEO[j]; congelate++;
-    });
-    v.locked=true; v.mk.dragging&&v.mk.dragging.disable();
-    toast('Tappa '+(i+1)+' bloccata: '+congelate+' tratte congelate, non verranno piu\' ricalcolate.');
-    setStatus('Tappa '+(i+1)+' BLOCCATA. Le '+congelate+' tratte che la toccano sono congelate: "Rifai", "Evita" e lo slider non le modificheranno piu\'. Ribloccare la tappa le libera.');
+  if(i<0 || i>=pts.length-1) return;
+  if(!LEGGEO[i]){ toast('Calcola prima la traccia: non so ancora cosa congelare'); return; }
+  var pk=pinKey(pts[i],pts[i+1]);
+  if(PIN[pk]){
+    delete PIN[pk];
+    setStatus('Tratta '+legNome(i)+' sbloccata: torna ricalcolabile.');
   }else{
-    idx.forEach(function(j){
-      if(j<0 || j>=pts.length-1) return;
-      delete PIN[pinKey(pts[j],pts[j+1])];
-    });
-    v.locked=false; v.mk.dragging&&v.mk.dragging.enable();
-    toast('Tappa '+(i+1)+' sbloccata: le sue tratte tornano ricalcolabili.');
-    setStatus('Tappa '+(i+1)+' sbloccata.');
+    PIN[pk]=LEGGEO[i];
+    setStatus('Tratta '+legNome(i)+' BLOCCATA: "Rifai", gli evitamenti e lo slider non la toccheranno piu\'.');
   }
-  refreshVias();
+  refreshLegs(); drawPinned();
+}
+
+function legNome(i){
+  var n=VIAS.length;
+  var da=(i===0)?'P':('T'+i);
+  var a=(i===n)?'A':('T'+(i+1));
+  return da+' \u2192 '+a;
+}
+
+function legBloccata(i){
+  var pts=[P.start].concat(VIAS).concat([P.end]);
+  if(i<0 || i>=pts.length-1) return false;
+  return !!PIN[pinKey(pts[i],pts[i+1])];
+}
+
+function refreshLegs(){
+  var wrap=document.getElementById('legWrap'), el=document.getElementById('legList');
+  if(!wrap||!el) return;
+  var pts=[P.start].concat(VIAS).concat([P.end]);
+  var n=pts.length-1;
+  if(!P.start||!P.end||!LEGGEO.length||n<1){ wrap.style.display='none'; return; }
+  wrap.style.display='block'; el.innerHTML='';
+  var nBl=0;
+  for(var i=0;i<n;i++){
+    (function(i){
+      var bloc=legBloccata(i);
+      if(bloc) nBl++;
+      var f=LEGGEO[i];
+      var km=(f&&f.properties&&f.properties['track-length'])
+             ? (parseFloat(f.properties['track-length'])/1000).toFixed(1)+' km' : '';
+      var row=document.createElement('div'); row.className='viarow';
+      var lbl=document.createElement('span');
+      lbl.textContent=(bloc?'\u25A0 ':'\u25A1 ')+legNome(i)+(km?('  '+km):'');
+      lbl.style.flex='1';
+      if(bloc){ lbl.style.color='#E8B04B'; lbl.style.fontWeight='600'; }
+      var b=document.createElement('button');
+      b.textContent=bloc?'sblocca':'blocca';
+      b.title=bloc?'Rende di nuovo ricalcolabile questa tratta'
+                  :'Congela questa tratta: non verra\' piu\' ricalcolata';
+      if(bloc) b.style.background='#E8B04B';
+      b.onclick=function(){ toggleLockLeg(i); };
+      row.appendChild(lbl); row.appendChild(b); el.appendChild(row);
+    })(i);
+  }
+  var tutte=document.createElement('div'); tutte.className='viarow';
+  var info=document.createElement('span'); info.style.flex='1'; info.style.fontSize='11px'; info.style.color='#5a6b5f';
+  info.textContent=nBl+' di '+n+' tratte bloccate';
+  var sb=document.createElement('button'); sb.textContent='sblocca tutte';
+  sb.onclick=function(){ PIN={}; refreshLegs(); drawPinned(); setStatus('Tutte le tratte sbloccate.'); };
+  tutte.appendChild(info); tutte.appendChild(sb); el.appendChild(tutte);
+}
+
+// evidenzia sulla mappa, sotto la traccia, le tratte congelate
+var pinLayer=null;
+function drawPinned(){
+  if(pinLayer){ map.removeLayer(pinLayer); pinLayer=null; }
+  var pts=[P.start].concat(VIAS).concat([P.end]);
+  var g=L.layerGroup();
+  var qualcosa=false;
+  for(var i=0;i<pts.length-1;i++){
+    if(!legBloccata(i)) continue;
+    var f=PIN[pinKey(pts[i],pts[i+1])];
+    if(!f||!f.geometry||!f.geometry.coordinates) continue;
+    var ll=f.geometry.coordinates.map(function(c){return [c[1],c[0]];});
+    L.polyline(ll,{color:'#E8B04B',weight:11,opacity:0.55}).addTo(g);
+    qualcosa=true;
+  }
+  if(qualcosa){ pinLayer=g; g.addTo(map); if(routeLayer&&routeLayer.bringToFront) routeLayer.bringToFront(); }
 }
 
 function legKey(a,b,prof,nogos){
@@ -1478,6 +1534,7 @@ async function doTrace(){
         return doTrace();
       }
     }
+    refreshLegs(); drawPinned();
     var nSteep=steepPoints(35).length;
     var sw=document.getElementById('steepWrap'); if(sw) sw.style.display=nSteep?'block':'none';
     var ancore='';
