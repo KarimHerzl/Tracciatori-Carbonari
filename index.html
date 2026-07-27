@@ -6,7 +6,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Tracciatori Carbonari (v66)</title>
+<title>Tracciatori Carbonari (v67)</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -85,7 +85,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // CHECK_VERSION: controlla version.txt (con anti-cache forzato nel fetch, che
 // bypassa anche la CDN di GitHub Pages) e ricarica se e' uscita una versione nuova.
 (function(){
-  var LOCAL='v66';
+  var LOCAL='v67';
   fetch('version.txt?_='+Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.text() : null; })
     .then(function(txt){
@@ -105,7 +105,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build ancore v66</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build ancore-blocco v67</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -148,7 +148,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           <input type="checkbox" id="escludiIllegali" checked style="accent-color:var(--brass)">
           Escludi ciclabili e accessi privati (sempre)
         </label>
-        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v66)</button>
+        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v67)</button>
         <div id="regolePanel" style="display:none;margin-top:8px;padding:10px;background:#f2efe6;border-radius:8px;font-size:12px;line-height:1.5;color:#3a3a3a">
           <b>Regole attive (build v60)</b><br>
           <b>Asfalto (rosso):</b> strade primary/secondary/tertiary; strade comunali (unclassified/residential) senza tag fondo; qualsiasi surface pavimentato; asfalto certo da ESRI (WARM&lt;0.08, SAT&lt;0.17).<br>
@@ -587,8 +587,14 @@ function refreshVias(){
     v.mk.setIcon(viaIcon(i+1));
     var row=document.createElement('div'); row.className='viarow';
     var lbl=document.createElement('span');
-    lbl.textContent='Tappa '+(i+1)+': '+(v.label||v.lat.toFixed(4)+', '+v.lng.toFixed(4));
+    lbl.textContent=(v.locked?'[BLOCCATA] ':'')+'Tappa '+(i+1)+': '+(v.label||v.lat.toFixed(4)+', '+v.lng.toFixed(4));
     lbl.style.flex='1';
+    if(v.locked) lbl.style.color='#E8B04B';
+    var lk=document.createElement('button');
+    lk.textContent=v.locked?'sblocca':'blocca';
+    lk.title=v.locked?'Libera le tratte di questa tappa':'Congela le tratte che toccano questa tappa: non verranno piu\' ricalcolate';
+    if(v.locked) lk.style.background='#E8B04B';
+    lk.onclick=function(){ toggleLockVia(i); };
     var up=document.createElement('button'); up.textContent='su';
     up.disabled=(i===0); if(i===0)up.style.opacity='.3';
     up.onclick=function(){ var t=VIAS[i-1]; VIAS[i-1]=VIAS[i]; VIAS[i]=t; refreshVias(); if(lastCoords&&P.start&&P.end) doTrace(); };
@@ -597,11 +603,11 @@ function refreshVias(){
     dn.onclick=function(){ var t=VIAS[i+1]; VIAS[i+1]=VIAS[i]; VIAS[i]=t; refreshVias(); if(lastCoords&&P.start&&P.end) doTrace(); };
     var del=document.createElement('button'); del.textContent='togli';
     del.onclick=function(){ map.removeLayer(v.mk); VIAS.splice(i,1); refreshVias(); if(lastCoords&&P.start&&P.end) doTrace(); };
-    row.appendChild(lbl); row.appendChild(up); row.appendChild(dn); row.appendChild(del); el.appendChild(row);
+    row.appendChild(lbl); row.appendChild(lk); row.appendChild(up); row.appendChild(dn); row.appendChild(del); el.appendChild(row);
   });
 }
 function addVia(lat,lng,label){
-  var v={lat:lat,lng:lng,label:label||null};
+  var v={lat:lat,lng:lng,label:label||null,locked:false};
   v.mk=L.marker([lat,lng],{icon:viaIcon(VIAS.length+1),draggable:true}).addTo(map);
   v.mk.on('dragend',function(){var p=v.mk.getLatLng();v.lat=p.lat;v.lng=p.lng;v.label=null;refreshVias(); if(lastCoords&&P.start&&P.end) doTrace();});
   VIAS.push(v); refreshVias();
@@ -1343,7 +1349,47 @@ function setBusy(on){
 // spostando la PRIMA non si riusa niente. E' corretto cosi', non e' un difetto.
 // ============================================================================
 var LEGCACHE={}, LEGORDER=[], LEGCACHE_MAX=80;
-var _legRiusate=0, _legCalcolate=0;
+var _legRiusate=0, _legCalcolate=0, _legCongelate=0;
+
+// ---- TRATTE CONGELATE (il "blocco" delle tappe) --------------------------
+// PIN conserva la geometria di una tratta che l'utente ha deciso di NON far
+// piu' toccare. La chiave sono i soli estremi (niente profilo, niente nogo):
+// cosi' la tratta resta identica anche quando cambi durezza, aggiungi nogo o
+// premi "Rifai". E' il "congela il confermato, rielabora solo il dubbio".
+// LEGGEO tiene la geometria dell'ultimo calcolo, tratta per tratta: serve per
+// sapere COSA congelare nel momento in cui blocchi una tappa.
+var PIN={}, LEGGEO=[];
+function pinKey(a,b){
+  return a.lat.toFixed(5)+','+a.lng.toFixed(5)+'>'+b.lat.toFixed(5)+','+b.lng.toFixed(5);
+}
+function pinConta(){ var n=0; for(var k in PIN) if(PIN.hasOwnProperty(k)) n++; return n; }
+
+// blocca/sblocca la tappa i: congela (o libera) le DUE tratte che la toccano
+function toggleLockVia(i){
+  var v=VIAS[i];
+  var pts=[P.start].concat(VIAS).concat([P.end]);
+  if(!v.locked && !LEGGEO.length){ toast('Calcola prima la traccia: non so ancora cosa congelare'); return; }
+  var idx=[i, i+1];   // tratta che ARRIVA alla tappa e tratta che ne PARTE
+  if(!v.locked){
+    var congelate=0;
+    idx.forEach(function(j){
+      if(j<0 || j>=pts.length-1 || !LEGGEO[j]) return;
+      PIN[pinKey(pts[j],pts[j+1])]=LEGGEO[j]; congelate++;
+    });
+    v.locked=true; v.mk.dragging&&v.mk.dragging.disable();
+    toast('Tappa '+(i+1)+' bloccata: '+congelate+' tratte congelate, non verranno piu\' ricalcolate.');
+    setStatus('Tappa '+(i+1)+' BLOCCATA. Le '+congelate+' tratte che la toccano sono congelate: "Rifai", "Evita" e lo slider non le modificheranno piu\'. Ribloccare la tappa le libera.');
+  }else{
+    idx.forEach(function(j){
+      if(j<0 || j>=pts.length-1) return;
+      delete PIN[pinKey(pts[j],pts[j+1])];
+    });
+    v.locked=false; v.mk.dragging&&v.mk.dragging.enable();
+    toast('Tappa '+(i+1)+' sbloccata: le sue tratte tornano ricalcolabili.');
+    setStatus('Tappa '+(i+1)+' sbloccata.');
+  }
+  refreshVias();
+}
 
 function legKey(a,b,prof,nogos){
   return a.lat.toFixed(5)+','+a.lng.toFixed(5)+'>'+b.lat.toFixed(5)+','+b.lng.toFixed(5)
@@ -1361,7 +1407,7 @@ async function doTrace(){
   if(!P.start||!P.end)return;
   setBusy(true);
   var pts=[P.start].concat(VIAS).concat([P.end]);
-  _legRiusate=0; _legCalcolate=0;
+  _legRiusate=0; _legCalcolate=0; _legCongelate=0; LEGGEO=[];
   var lbl=LABELS[Math.min(3,parseInt(document.getElementById('aggr').value,10)+(window.PASS||0))];
   if(!(window._autoEvitaCount>0)) setStatusReset('Calcolo la traccia ('+lbl+')... se il server dormiva servira qualche minuto');
   else setStatus('Calcolo la traccia ('+lbl+')...');
@@ -1376,13 +1422,20 @@ async function doTrace(){
       var prioNg=(window.NOGOS||[]).filter(function(x){return window._nogoCorr&&window._nogoCorr[x];});
       var altriNg=(window.NOGOS||[]).filter(function(x){return !(window._nogoCorr&&window._nogoCorr[x]);});
       var legNogos=prioNg.concat(altriNg).concat(usedNogos);
-      var f, k=legKey(pts[i],pts[i+1],profile(),legNogos), cached=legGet(k);
-      if(cached){ f=cached; _legRiusate++; }
-      else{
-        try{ f=await fetchLeg(pts[i],pts[i+1],legNogos); }
-        catch(e){ f=await fetchLeg(pts[i],pts[i+1],window.NOGOS||[]); }  // se troppo vincolato, ritento libero
-        legPut(k,f); _legCalcolate++;
+      var f, pk=pinKey(pts[i],pts[i+1]);
+      if(PIN[pk]){
+        // tratta CONGELATA: non la ricalcolo, qualunque cosa sia cambiato.
+        f=PIN[pk]; _legCongelate++;
+      }else{
+        var k=legKey(pts[i],pts[i+1],profile(),legNogos), cached=legGet(k);
+        if(cached){ f=cached; _legRiusate++; }
+        else{
+          try{ f=await fetchLeg(pts[i],pts[i+1],legNogos); }
+          catch(e){ f=await fetchLeg(pts[i],pts[i+1],window.NOGOS||[]); }  // se troppo vincolato, ritento libero
+          legPut(k,f); _legCalcolate++;
+        }
       }
+      LEGGEO[i]=f;   // memoria dell'ultimo calcolo: serve per poter congelare
       var coords=f.geometry.coordinates;
       var msgs=f.properties&&f.properties.messages;
       if(allMsgs===null){ allMsgs=msgs?msgs.slice():null; }
@@ -1427,7 +1480,11 @@ async function doTrace(){
     }
     var nSteep=steepPoints(35).length;
     var sw=document.getElementById('steepWrap'); if(sw) sw.style.display=nSteep?'block':'none';
-    var ancore=_legRiusate?(' - ancore: '+_legRiusate+' tratte riusate, '+_legCalcolate+' ricalcolate'):'';
+    var ancore='';
+    if(_legCongelate||_legRiusate){
+      ancore=' - ancore:'+(_legCongelate?(' '+_legCongelate+' congelate,'):'')
+            +(_legRiusate?(' '+_legRiusate+' riusate,'):'')+' '+_legCalcolate+' ricalcolate';
+    }
     setStatus('Traccia calcolata: '+km.toFixed(1)+' km ('+lbl+')'+ancore+(nSteep?(' - '+nSteep+' punti oltre il 35%: usa "Evita i tratti ripidi"'):'')+'.');
   }catch(err){
     var extra = (window.NOGOS && window.NOGOS.length) ? ' Forse sto evitando troppi tratti: premi "Traccia percorso" per ripartire pulito.' : ' Se il server si svegliava, riprova.';
