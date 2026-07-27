@@ -6,7 +6,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Tracciatori Carbonari (v54)</title>
+<title>Tracciatori Carbonari (v56)</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -85,7 +85,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // CHECK_VERSION: controlla version.txt (con anti-cache forzato nel fetch, che
 // bypassa anche la CDN di GitHub Pages) e ricarica se e' uscita una versione nuova.
 (function(){
-  var LOCAL='v54';
+  var LOCAL='v56';
   fetch('version.txt?_='+Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.text() : null; })
     .then(function(txt){
@@ -105,7 +105,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build altitudine v54</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build scandaglio-5 v56</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -148,9 +148,9 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           <input type="checkbox" id="escludiIllegali" checked style="accent-color:var(--brass)">
           Escludi ciclabili e accessi privati (sempre)
         </label>
-        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v54)</button>
+        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v56)</button>
         <div id="regolePanel" style="display:none;margin-top:8px;padding:10px;background:#f2efe6;border-radius:8px;font-size:12px;line-height:1.5;color:#3a3a3a">
-          <b>Regole attive (build v54)</b><br>
+          <b>Regole attive (build v56)</b><br>
           <b>Asfalto (rosso):</b> strade primary/secondary/tertiary; strade comunali (unclassified/residential) senza tag fondo; qualsiasi surface pavimentato; asfalto certo da ESRI (WARM&lt;0.08, SAT&lt;0.17).<br>
           <b>Sterrato (bianco):</b> gravel/compacted/unpaved, tracktype grade2-5, mtb basso.<br>
           <b>Terra (marrone) / Erba (verde):</b> da surface OSM esplicito.<br>
@@ -570,24 +570,46 @@ function drawColored(coords,messages){
 
 // se attivi i flag, aggiunge magenta (sentieri) e/o neri (illegali) ai nogo e ritraccia UNA volta
 function autoEvita(){
-  if(window._autoEvitaFatto) return;   // evita loop di ricalcolo
+  window._autoEvitaCount=(window._autoEvitaCount||0)+1;
+  var giro=window._autoEvitaCount;
   var evitaSent=document.getElementById('evitaSentieri') && document.getElementById('evitaSentieri').checked;
   var esclIlleg=document.getElementById('escludiIllegali') && document.getElementById('escludiIllegali').checked;
-  if(!evitaSent && !esclIlleg) return;
+  if(!evitaSent && !esclIlleg){ return; }
+  // conto i tratti ancora da evitare nella traccia corrente
   var target=[];
   lastSegs.forEach(function(sg){
     if(evitaSent && sg.level==="magenta") target.push(sg);
     if(esclIlleg && sg.level==="nero") target.push(sg);
   });
-  if(!target.length) return;
-  window._autoEvitaFatto=true;
+  console.log("[AUTOEVITA] giro",giro,"| tratti ancora da evitare:",target.length);
+
+  // SUCCESSO: nessun tratto da evitare rimasto -> traccia pulita
+  if(!target.length){
+    if(giro>1) setStatus("Percorso trovato evitando sentieri e tratti vietati.");
+    return;
+  }
+
+  // ESAURITI I TENTATIVI: dopo 5 giri, accetto la traccia coi tratti inevitabili
+  if(giro>=5){
+    var kmMag=0, kmNero=0;
+    target.forEach(function(sg){ if(sg.level==="magenta") kmMag+=sg.km; else kmNero+=sg.km; });
+    var parti=[];
+    if(kmMag>0.05) parti.push(kmMag.toFixed(1)+" km di mulattiera/sentiero");
+    if(kmNero>0.05) parti.push(kmNero.toFixed(1)+" km di tratti vietati");
+    setStatus("Non risultano alternative: il percorso include "+parti.join(" e ")+" (inevitabili). Valuta a occhio o correggi a mano.");
+    console.log("[AUTOEVITA] esauriti 5 giri, tratti inevitabili accettati");
+    return;
+  }
+
+  // ALTRIMENTI: aggiungo nogo (raggio crescente ogni giro per spingere piu' lontano) e ritento
   window.NOGOS=window.NOGOS||[]; window.NOGOKEY=window.NOGOKEY||{};
+  var extra=(giro-1)*30;   // ogni giro allarga il raggio: 0, +30, +60, +90...
   var aggiunti=0;
   target.forEach(function(sg){
     var ll=sg.ll, lung=0; for(var k=1;k<ll.length;k++) lung+=distM(ll[k-1],ll[k]);
     var m=ll[Math.floor(ll.length/2)]; if(!m) return;
-    var rr=Math.max(40, Math.min(Math.round(lung/2), 150));
-    var key=m[0].toFixed(4)+","+m[1].toFixed(4);
+    var rr=Math.max(40, Math.min(Math.round(lung/2)+extra, 200));
+    var key=giro+"|"+m[0].toFixed(4)+","+m[1].toFixed(4);   // chiave per-giro: raffina ogni volta
     if(window.NOGOKEY[key]) return;
     window.NOGOKEY[key]=true;
     var ns=m[1].toFixed(5)+","+m[0].toFixed(5)+","+rr;
@@ -595,15 +617,14 @@ function autoEvita(){
     window._nogoCorr=window._nogoCorr||{}; window._nogoCorr[ns]=true;  // priorita': non tagliare
     aggiunti++;
   });
-  if(aggiunti){
-    if(window.NOGOS.length>50){
-      var prio=window.NOGOS.filter(function(x){return window._nogoCorr&&window._nogoCorr[x];});
-      var altri=window.NOGOS.filter(function(x){return !(window._nogoCorr&&window._nogoCorr[x]);});
-      window.NOGOS=prio.concat(altri.slice(-Math.max(0,50-prio.length)));
-    }
-    setStatus("Evito "+aggiunti+" tratti (sentieri/illegali) e ricalcolo...");
-    doTrace();
+  // tetto nogo, preservando i prioritari
+  if(window.NOGOS.length>60){
+    var prio=window.NOGOS.filter(function(x){return window._nogoCorr&&window._nogoCorr[x];});
+    var altri=window.NOGOS.filter(function(x){return !(window._nogoCorr&&window._nogoCorr[x]);});
+    window.NOGOS=prio.concat(altri.slice(-Math.max(0,60-prio.length)));
   }
+  setStatus("Tentativo "+giro+"/5: evito "+target.length+" tratti e cerco un'alternativa...");
+  doTrace();
 }
 function routeStyleForZoom(){
   var z=map.getZoom();
@@ -1136,7 +1157,7 @@ window.NOGOS = [];      // elenco cumulativo "lon,lat,raggio"
 window.NOGOKEY = {};    // per non ripetere lo stesso punto
 window.PASS = 0;
 
-function resetNogos(){ window.NOGOS=[]; window.NOGOKEY={}; window.PASS=0; window._g5done=false; window._nogoCorr={}; window._autoEvitaFatto=false; }
+function resetNogos(){ window.NOGOS=[]; window.NOGOKEY={}; window.PASS=0; window._g5done=false; window._nogoCorr={}; window._autoEvitaFatto=false; window._autoEvitaCount=0; }
 
 function optimize(){
   window.PASS++;
