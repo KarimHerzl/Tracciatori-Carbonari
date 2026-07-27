@@ -6,7 +6,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Tracciatori Carbonari (v61)</title>
+<title>Tracciatori Carbonari (v62)</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -85,7 +85,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // CHECK_VERSION: controlla version.txt (con anti-cache forzato nel fetch, che
 // bypassa anche la CDN di GitHub Pages) e ricarica se e' uscita una versione nuova.
 (function(){
-  var LOCAL='v61';
+  var LOCAL='v62';
   fetch('version.txt?_='+Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.text() : null; })
     .then(function(txt){
@@ -105,7 +105,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build sampler-fine v61</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build sampler-batch v62</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -148,7 +148,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           <input type="checkbox" id="escludiIllegali" checked style="accent-color:var(--brass)">
           Escludi ciclabili e accessi privati (sempre)
         </label>
-        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v61)</button>
+        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v62)</button>
         <div id="regolePanel" style="display:none;margin-top:8px;padding:10px;background:#f2efe6;border-radius:8px;font-size:12px;line-height:1.5;color:#3a3a3a">
           <b>Regole attive (build v60)</b><br>
           <b>Asfalto (rosso):</b> strade primary/secondary/tertiary; strade comunali (unclassified/residential) senza tag fondo; qualsiasi surface pavimentato; asfalto certo da ESRI (WARM&lt;0.08, SAT&lt;0.17).<br>
@@ -277,8 +277,9 @@ var LABELS   = ["piu' diretto","equilibrato","piu' sterrato","massimo"];
     out.push({ lat: last[0], lon: last[1], vi: ll.length-1 });
     return out;
   }
-  async function chiediSurface(sampler, campioni, blocco, fetchImpl) {
+  async function chiediSurface(sampler, campioni, blocco, fetchImpl, onBlock) {
     var guesses = new Array(campioni.length).fill(null);
+    var nb = Math.ceil(campioni.length / blocco) || 0, bi = 0;
     for (var b = 0; b < campioni.length; b += blocco) {
       var gruppo = campioni.slice(b, b + blocco);
       var points = gruppo.map(function (c) { return [c.lon, c.lat]; });
@@ -290,6 +291,7 @@ var LABELS   = ["piu' diretto","equilibrato","piu' sterrato","massimo"];
       var j = await r.json(), res = j.results || [];
       for (var k = 0; k < gruppo.length; k++)
         guesses[b + k] = (res[k] && res[k].guess) ? res[k].guess : null;
+      bi++; if (onBlock) onBlock(bi, nb);
     }
     return guesses;
   }
@@ -356,7 +358,63 @@ var LABELS   = ["piu' diretto","equilibrato","piu' sterrato","massimo"];
       punti: campioni.filter(function (_, i) { return guesses[i]; }).length,
       stepEff: Math.round(stepEff), perTag: perTag } };
   }
-  root.TCsampler = { sampleLeg: sampleLeg, SURFACE: SURFACE };
+  // sampleLegsBatch(legs, opts): campiona TANTE tratte con UNA sola passata a
+  // blocchi (invece di una chiamata per tratta), poi spezza in locale. Stessa
+  // densita' di punti per tratta di sampleLeg -> stessa qualita', ma da ~N
+  // chiamate a ~N_punti/blocco chiamate. Ritorna un array parallelo a legs:
+  //   [ { segments:[{i0,i1,tag,color,label,km}], stats:{perTag} }, ... ]
+  //   legs         : [ [[lat,lon],...], ... ]   (una ll per tratta)
+  //   opts.stepM   : passo campionamento per tratta (default 25)
+  //   opts.maxPer  : max punti per tratta (default 20)
+  //   opts.minSubM : lunghezza minima sotto-segmento (default 50)
+  //   opts.blocco  : punti per chiamata /surface (default 60 -> poche chiamate)
+  //   opts.onProgress(fatti,totali): callback avanzamento blocchi
+  async function sampleLegsBatch(legs, opts) {
+    opts = opts || {};
+    var sampler   = opts.sampler   || SAMPLER_DEFAULT;
+    var stepM     = opts.stepM     || 25;
+    var maxPer    = opts.maxPer    || 20;
+    var minSubM   = opts.minSubM   || 50;
+    var blocco    = opts.blocco    || 60;
+    var fetchImpl = opts.fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+    if (!fetchImpl) throw new Error('nessun fetch disponibile');
+
+    // 1) interpolo i campioni di OGNI tratta (locale) e li accumulo in un'unica lista
+    var flat = [], perLeg = [];
+    for (var li = 0; li < legs.length; li++) {
+      var ll = legs[li];
+      if (!ll || ll.length < 2) { perLeg.push({ ll: ll, camp: [], base: flat.length }); continue; }
+      var camp = interpolaCampioni(ll, stepM);
+      if (camp.length > maxPer) {
+        var passo = camp.length / maxPer, r = [];
+        for (var i = 0; i < maxPer; i++) r.push(camp[Math.floor(i * passo)]);
+        camp = r;
+      }
+      perLeg.push({ ll: ll, camp: camp, base: flat.length });
+      for (var k = 0; k < camp.length; k++) flat.push(camp[k]);
+    }
+
+    // 2) UNA passata a blocchi per tutti i punti di tutte le tratte
+    var guesses = await chiediSurface(sampler, flat, blocco, fetchImpl, opts.onProgress);
+
+    // 3) split in locale, tratta per tratta
+    return perLeg.map(function (L) {
+      if (!L.camp.length) return { segments: [], stats: { perTag: {} } };
+      var g = guesses.slice(L.base, L.base + L.camp.length);
+      var perV = guessPerVertice(L.camp, g, L.ll.length);
+      var runs = costruisciSottoSegmenti(L.ll, perV, minSubM);
+      var perTag = {};
+      var segments = runs.map(function (r) {
+        var m = mapGuess(r.guess), km = 0;
+        for (var i = r.i0+1; i <= r.i1; i++) km += dM(L.ll[i-1], L.ll[i]); km /= 1000;
+        perTag[m.tag] = (perTag[m.tag] || 0) + km;
+        return { i0: r.i0, i1: r.i1, tag: m.tag, color: m.color, label: m.label, km: km };
+      });
+      return { segments: segments, stats: { perTag: perTag } };
+    });
+  }
+
+  root.TCsampler = { sampleLeg: sampleLeg, sampleLegsBatch: sampleLegsBatch, SURFACE: SURFACE };
 })(window);
 
 var map = L.map('map',{zoomControl:true}).setView([45.11,8.45],11);
@@ -1295,44 +1353,45 @@ document.getElementById('avoidSteep').onclick=function(){
 
 document.getElementById('verify').onclick=verifyFond;
 
-// VERIFICA FONDO FINE (v61): usa TCsampler.sampleLeg per spezzare ogni tratto
-// INCERTO in sotto-segmenti omogenei, invece di ricolorare tutto il tratto con
-// un voto di maggioranza. Additivo: lascia intatti gli altri tratti (OSM), tocca
-// SOLO i grigi -- nessuna regressione. E' la stessa funzione che riusera' il
-// modello ad ancore dentro recompute, qui provata sul comportamento reale.
+// VERIFICA FONDO FINE (v62): spezza ogni tratto INCERTO in sotto-segmenti col
+// sampler, invece di ricolorare tutto il tratto con un voto di maggioranza.
+// Additivo: tocca SOLO i grigi (nessuna regressione). v62: UNA passata a blocchi
+// (sampleLegsBatch) invece di una chiamata per tratto -> da ~30 chiamate a poche.
 async function verifyFineFond(){
   if(!lastSegs.length){ toast("Traccia prima un percorso"); return; }
-  if(!window.TCsampler){ toast("Adapter sampler non caricato"); return; }
+  if(!window.TCsampler || !window.TCsampler.sampleLegsBatch){ toast("Adapter sampler non caricato"); return; }
   setBusy(true);
   // indici dei tratti incerti (non gia' corretti a mano), dal fondo per non sfasare gli splice
   var daVerif=[]; for(var i=0;i<lastSegs.length;i++){ if(lastSegs[i].level==="incerto" && !lastSegs[i].corretto) daVerif.push(i); }
   if(!daVerif.length){ setStatus("Nessun tratto incerto da spezzare. (I colori vengono gia' dai tag OSM.)"); setBusy(false); return; }
   daVerif.sort(function(a,b){return b-a;});   // dal piu' alto al piu' basso
-  var totSub=0, risolti=0, errori=0;
-  setStatus("Verifica FINE: campiono "+daVerif.length+" tratti incerti col sampler... (il server puo' svegliarsi)");
-  for(var d=0; d<daVerif.length; d++){
-    var si=daVerif[d], seg=lastSegs[si];
-    try{
-      var out=await window.TCsampler.sampleLeg(seg.ll, {stepM:25, budget:20, minSubM:50});
-      var subs=out.segments||[];
-      if(!subs.length){ continue; }
-      // costruisco i nuovi tratti dai sotto-range (indici dentro seg.ll)
-      var rimpiazzo=subs.map(function(s){
-        var ll=seg.ll.slice(s.i0, s.i1+1);
-        return { level:s.tag, color:s.color, label:s.label, ll:ll, km:s.km,
-                 pend:seg.pend||0, quota:seg.quota||0, corretto:false };
-      }).filter(function(x){ return x.ll.length>=2; });
-      if(!rimpiazzo.length){ continue; }
-      // conto quanti sotto-tratti hanno un fondo risolto (non piu' incerto)
-      rimpiazzo.forEach(function(x){ if(x.level!=="incerto") risolti++; });
-      totSub += rimpiazzo.length;
-      Array.prototype.splice.apply(lastSegs, [si,1].concat(rimpiazzo));
-    }catch(e){ errori++; }
-    if(d%3===0) setStatus("Verifica FINE: "+(d+1)+"/"+daVerif.length+" tratti...");
+  var legs=daVerif.map(function(si){ return lastSegs[si].ll; });
+  var t0=Date.now();
+  setStatus("Verifica FINE: campiono "+daVerif.length+" tratti in un'unica passata... (il server puo' svegliarsi)");
+  var results;
+  try{
+    results=await window.TCsampler.sampleLegsBatch(legs, {stepM:25, maxPer:20, minSubM:50, blocco:60,
+      onProgress:function(f,t){ setStatus("Verifica FINE: blocco "+f+"/"+t+"..."); }});
+  }catch(e){ toast("Errore sampler: "+e.message); setBusy(false); return; }
+  var totSub=0, risolti=0;
+  for(var k=0; k<daVerif.length; k++){
+    var si=daVerif[k], seg=lastSegs[si];
+    var subs=(results[k]&&results[k].segments)||[];
+    if(!subs.length) continue;
+    var rimpiazzo=subs.map(function(s){
+      var ll=seg.ll.slice(s.i0, s.i1+1);
+      return { level:s.tag, color:s.color, label:s.label, ll:ll, km:s.km,
+               pend:seg.pend||0, quota:seg.quota||0, corretto:false };
+    }).filter(function(x){ return x.ll.length>=2; });
+    if(!rimpiazzo.length) continue;
+    rimpiazzo.forEach(function(x){ if(x.level!=="incerto") risolti++; });
+    totSub += rimpiazzo.length;
+    Array.prototype.splice.apply(lastSegs, [si,1].concat(rimpiazzo));
   }
   renderSegs();
   finalizzaVerifica(0, risolti);
-  setStatus("Verifica FINE finita: "+daVerif.length+" tratti incerti -> "+totSub+" sotto-tratti, "+risolti+" risolti"+(errori?(" ("+errori+" errori sampler)"):"")+".");
+  var sec=Math.round((Date.now()-t0)/1000);
+  setStatus("Verifica FINE finita in "+sec+"s: "+daVerif.length+" tratti -> "+totSub+" sotto-tratti, "+risolti+" risolti.");
   setBusy(false);
 }
 document.getElementById('verifyFine').onclick=verifyFineFond;
