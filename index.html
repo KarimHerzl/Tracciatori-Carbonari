@@ -6,7 +6,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Tracciatori Carbonari (v51)</title>
+<title>Tracciatori Carbonari (v54)</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -85,7 +85,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // CHECK_VERSION: controlla version.txt (con anti-cache forzato nel fetch, che
 // bypassa anche la CDN di GitHub Pages) e ricarica se e' uscita una versione nuova.
 (function(){
-  var LOCAL='v51';
+  var LOCAL='v54';
   fetch('version.txt?_='+Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.text() : null; })
     .then(function(txt){
@@ -105,7 +105,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build mulattiere v51</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build altitudine v54</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -140,6 +140,25 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           <input type="checkbox" id="soloLegali" style="accent-color:var(--brass)">
           Escludi i tratti vietati (access privato/no)
         </label>
+        <label class="info" style="display:flex;gap:8px;align-items:center;margin-top:8px;cursor:pointer">
+          <input type="checkbox" id="evitaSentieri" style="accent-color:var(--brass)">
+          Evita sentieri/mulattiere (magenta)
+        </label>
+        <label class="info" style="display:flex;gap:8px;align-items:center;margin-top:8px;cursor:pointer">
+          <input type="checkbox" id="escludiIllegali" checked style="accent-color:var(--brass)">
+          Escludi ciclabili e accessi privati (sempre)
+        </label>
+        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v54)</button>
+        <div id="regolePanel" style="display:none;margin-top:8px;padding:10px;background:#f2efe6;border-radius:8px;font-size:12px;line-height:1.5;color:#3a3a3a">
+          <b>Regole attive (build v54)</b><br>
+          <b>Asfalto (rosso):</b> strade primary/secondary/tertiary; strade comunali (unclassified/residential) senza tag fondo; qualsiasi surface pavimentato; asfalto certo da ESRI (WARM&lt;0.08, SAT&lt;0.17).<br>
+          <b>Sterrato (bianco):</b> gravel/compacted/unpaved, tracktype grade2-5, mtb basso.<br>
+          <b>Terra (marrone) / Erba (verde):</b> da surface OSM esplicito.<br>
+          <b>Mulattiera/sentiero (magenta):</b> path/bridleway senza indizi di percorribilita'. Escono dal magenta (diventano sterrato) se hanno un tag di solidita': mtb:scale&le;1, surface solido, smoothness buona, tracktype grade1-2, o width&ge;2m. Restano magenta se tecnici (sac_scale, mtb&ge;3, width&lt;1m). <b>Regola altitudine:</b> un sentiero anche "buono" sopra 800 m torna magenta (in quota piu' rischioso). Evitabili col flag dedicato.<br>
+          <b>Vietato (nero):</b> ciclabili, accessi privati/no, pedonali, scale, percorsi tecnici (sac_scale, mtb&ge;3). Esclusi dal percorso col flag dedicato.<br>
+          <b>Incerto (grigio):</b> tutto il resto - verificabile con satellite/correzione manuale.<br>
+          <b>Correzioni manuali:</b> hanno priorita' assoluta, salvate in locale e riapplicate alle tracce future in zona.
+        </div>
       </div>
 
       <div class="block">
@@ -160,7 +179,8 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
         <div class="leg"><span class="sw" style="background:#EDE8DA;outline:1px solid #bbb"></span>Sterrato (ghiaia)</div>
         <div class="leg"><span class="sw" style="background:#DB4B3F"></span>Asfalto</div>
         <div class="leg"><span class="sw" style="background:#8A93A0"></span>Incerto (da verificare)</div>
-        <div class="leg"><span class="sw" style="background:#0c0c0c;outline:1px solid #555"></span>Da evitare (mulattiera/vietato)</div>
+        <div class="leg"><span class="sw" style="background:#D633FF"></span>Mulattiera/sentiero</div>
+        <div class="leg"><span class="sw" style="background:#0c0c0c;outline:1px solid #555"></span>Vietato (ciclabile/privato/scale)</div>
         <div class="leg"><span class="sw" style="background:#E8A33D"></span>Tratteggio arancio = ripido (&gt;15%; fitto = &gt;25%)</div>
       </div>
 
@@ -427,6 +447,7 @@ document.getElementById('qE').addEventListener('keydown',function(e){if(e.key===
 // ====== chiamata al motore ======
 function parseTags(str){var o={};(str||"").split(" ").forEach(function(kv){var i=kv.indexOf("=");if(i>0)o[kv.slice(0,i)]=kv.slice(i+1);});return o;}
 function classify(t){
+  var _daSentiero=false;
   var acc=t.motorcycle||t.motor_vehicle||t.access;
   // solo divieti VERI: "destination" (= no transito) non e' un divieto per noi
   var bad=["private","no","agricultural","forestry"];
@@ -440,18 +461,30 @@ function classify(t){
   // pesante sono un'INCOGNITA (da soli rischiose, su lunga distanza da evitare) --
   // TRANNE quando i tag le dichiarano larghe e facili (allora restano percorribili).
   if(acc&&bad.indexOf(acc)>=0 && !isPaved) return {level:"nero",color:"#0c0c0c",label:"Vietato/non legale"};
+  if(t.highway==="cycleway") return {level:"nero",color:"#0c0c0c",label:"Pista ciclabile (vietata)"};
   if(t.highway==="footway"||t.highway==="steps"||t.highway==="pedestrian")
     return {level:"nero",color:"#0c0c0c",label:"Pedonale/scale"};
   if((t["sac_scale"]!=null || (mtb!=null&&mtb>=3)) && !isPaved)
     return {level:"nero",color:"#0c0c0c",label:"Tecnico (non adatto)"};
   if(t.highway==="path"||t.highway==="bridleway"){
-    // esce dall'incognita SOLO se larga (>=2 m) e con fondo dichiarato non-difficile
-    var largaFacile = (larghezza!=null && larghezza>=2.0) &&
-                      (t.smoothness==null || smoothOk.indexOf(t.smoothness)>=0) &&
-                      t["sac_scale"]==null && !(mtb!=null&&mtb>=2);
-    if(!largaFacile)
-      return {level:"nero",color:"#0c0c0c",label:"Mulattiera/sentiero (incognita)"};
-    // se larga e facile prosegue e verra' classificata come sterrato/incerto sotto
+    // Un sentiero esce dall'incognita (magenta) se i tag OSM lo dicono percorribile.
+    // Sfrutto i tag che i biker mappano piu' spesso di "width": mtb:scale, surface,
+    // smoothness, tracktype. Se c'e' anche UN solo indizio di solidita' -> percorribile.
+    var solido =
+      (larghezza!=null && larghezza>=2.0) ||                                  // larga
+      (mtb!=null && mtb<=1) ||                                                // MTB facile (scorrevole)
+      (t.surface && ["compacted","fine_gravel","gravel","asphalt","paved","concrete","dirt","ground"].indexOf(t.surface)>=0) || // fondo solido dichiarato
+      (t.smoothness && ["excellent","good","intermediate"].indexOf(t.smoothness)>=0) ||  // fondo buono
+      (["grade1","grade2"].indexOf(t.tracktype)>=0);                          // carrareccia compatta
+    // ma resta magenta se ha indizi di DIFFICOLTA', che prevalgono sempre
+    var difficile = (t["sac_scale"]!=null) || (mtb!=null && mtb>=3) ||
+                    (larghezza!=null && larghezza<1.0) ||
+                    (t.smoothness && ["very_bad","horrible","very_horrible","impassable"].indexOf(t.smoothness)>=0);
+    if(difficile || !solido)
+      return {level:"magenta",color:"#D633FF",label:"Mulattiera/sentiero (incognita)",daSentiero:true};
+    // se solido e non difficile prosegue: verra' classificato come sterrato/incerto sotto,
+    // ma resta marcato "daSentiero" per la regola altitudine (path in quota = piu' rischioso)
+    _daSentiero=true;
   }
   // ROSSO solo con prova di asfalto: fondo pavimentato dichiarato, oppure strade
   // di rango alto (che sono asfaltate per definizione). Le minori senza "surface"
@@ -477,8 +510,8 @@ function classify(t){
   var isGravel=(t.surface&&gravel.indexOf(t.surface)>=0)||["grade2","grade3","grade4","grade5"].indexOf(t.tracktype)>=0;
   var smoothRough=["bad","very_bad","horrible","very_horrible","impassable"];
   if(isGravel||(t.smoothness&&smoothRough.indexOf(t.smoothness)>=0)||(mtb!=null&&mtb<=2))
-    return {level:"sterrato",color:"#EDE8DA",label:"Sterrato"};
-  return {level:"incerto",color:"#8A93A0",label:"Incerto"};
+    return {level:"sterrato",color:"#EDE8DA",label:"Sterrato",daSentiero:_daSentiero};
+  return {level:"incerto",color:"#8A93A0",label:"Incerto",daSentiero:_daSentiero};
 }
 function nearestIdx(coords,lon,lat){var bi=0,bd=1e9;for(var j=0;j<coords.length;j++){var dl=coords[j][0]-lon,da=coords[j][1]-lat,d=dl*dl+da*da;if(d<bd){bd=d;bi=j;}}return bi;}
 function drawColored(coords,messages){
@@ -511,7 +544,17 @@ function drawColored(coords,messages){
       if(coords[prev]&&coords[idx]&&coords[prev].length>2&&coords[idx].length>2&&km>0.02){
         pend=Math.abs(coords[idx][2]-coords[prev][2])/(km*1000)*100;
       }
-      if(slice.length>=2) lastSegs.push({level:cls.level,color:cls.color,label:cls.label,ll:slice,km:km,pend:pend});
+      // quota media del tratto (per la regola altitudine sui sentieri)
+      var quota=0;
+      if(coords[prev]&&coords[idx]&&coords[prev].length>2&&coords[idx].length>2){
+        quota=(coords[prev][2]+coords[idx][2])/2;
+      }
+      // REGOLA ALTITUDINE: un sentiero "promosso" a sterrato ma sopra 800 m torna
+      // magenta -- in quota una mulattiera e' piu' rischiosa (esposta, soccorso lontano).
+      if(cls.daSentiero && quota>800 && cls.level!=="magenta"){
+        cls={level:"magenta",color:"#D633FF",label:"Mulattiera in quota (>800m)"};
+      }
+      if(slice.length>=2) lastSegs.push({level:cls.level,color:cls.color,label:cls.label,ll:slice,km:km,pend:pend,quota:quota});
       prev=idx;
     }
   } else {
@@ -521,8 +564,47 @@ function drawColored(coords,messages){
   renderSegs();
   if(nCorr) setStatus(nCorr+" tratti aggiornati da correzioni salvate.");
   map.fitBounds(L.latLngBounds(all).pad(0.15));
+  // esclusione automatica sentieri/illegali via nogo, se i flag sono attivi
+  autoEvita();
 }
 
+// se attivi i flag, aggiunge magenta (sentieri) e/o neri (illegali) ai nogo e ritraccia UNA volta
+function autoEvita(){
+  if(window._autoEvitaFatto) return;   // evita loop di ricalcolo
+  var evitaSent=document.getElementById('evitaSentieri') && document.getElementById('evitaSentieri').checked;
+  var esclIlleg=document.getElementById('escludiIllegali') && document.getElementById('escludiIllegali').checked;
+  if(!evitaSent && !esclIlleg) return;
+  var target=[];
+  lastSegs.forEach(function(sg){
+    if(evitaSent && sg.level==="magenta") target.push(sg);
+    if(esclIlleg && sg.level==="nero") target.push(sg);
+  });
+  if(!target.length) return;
+  window._autoEvitaFatto=true;
+  window.NOGOS=window.NOGOS||[]; window.NOGOKEY=window.NOGOKEY||{};
+  var aggiunti=0;
+  target.forEach(function(sg){
+    var ll=sg.ll, lung=0; for(var k=1;k<ll.length;k++) lung+=distM(ll[k-1],ll[k]);
+    var m=ll[Math.floor(ll.length/2)]; if(!m) return;
+    var rr=Math.max(40, Math.min(Math.round(lung/2), 150));
+    var key=m[0].toFixed(4)+","+m[1].toFixed(4);
+    if(window.NOGOKEY[key]) return;
+    window.NOGOKEY[key]=true;
+    var ns=m[1].toFixed(5)+","+m[0].toFixed(5)+","+rr;
+    window.NOGOS.push(ns);
+    window._nogoCorr=window._nogoCorr||{}; window._nogoCorr[ns]=true;  // priorita': non tagliare
+    aggiunti++;
+  });
+  if(aggiunti){
+    if(window.NOGOS.length>50){
+      var prio=window.NOGOS.filter(function(x){return window._nogoCorr&&window._nogoCorr[x];});
+      var altri=window.NOGOS.filter(function(x){return !(window._nogoCorr&&window._nogoCorr[x]);});
+      window.NOGOS=prio.concat(altri.slice(-Math.max(0,50-prio.length)));
+    }
+    setStatus("Evito "+aggiunti+" tratti (sentieri/illegali) e ricalcolo...");
+    doTrace();
+  }
+}
 function routeStyleForZoom(){
   var z=map.getZoom();
   // z<=13 lontano: linea spessa. Vicino: SOTTILE ma ben VISIBILE (opacita' piena),
@@ -1054,7 +1136,7 @@ window.NOGOS = [];      // elenco cumulativo "lon,lat,raggio"
 window.NOGOKEY = {};    // per non ripetere lo stesso punto
 window.PASS = 0;
 
-function resetNogos(){ window.NOGOS=[]; window.NOGOKEY={}; window.PASS=0; window._g5done=false; window._nogoCorr={}; }
+function resetNogos(){ window.NOGOS=[]; window.NOGOKEY={}; window.PASS=0; window._g5done=false; window._nogoCorr={}; window._autoEvitaFatto=false; }
 
 function optimize(){
   window.PASS++;
@@ -1118,8 +1200,18 @@ document.getElementById('menuFab').onclick=function(){
   setTimeout(function(){ map.invalidateSize(); },250);
 };
 window.addEventListener('resize',function(){ setTimeout(function(){ map.invalidateSize(); },250); });
+document.getElementById('mostraRegole').onclick=function(){
+  var p=document.getElementById('regolePanel');
+  p.style.display = p.style.display==='none' ? 'block' : 'none';
+};
 document.getElementById('soloLegali').addEventListener('change',function(){
-  if(lastCoords && P.start && P.end) doTrace();
+  if(lastCoords && P.start && P.end){ resetNogos(); doTrace(); }
+});
+document.getElementById('evitaSentieri').addEventListener('change',function(){
+  if(lastCoords && P.start && P.end){ resetNogos(); doTrace(); }
+});
+document.getElementById('escludiIllegali').addEventListener('change',function(){
+  if(lastCoords && P.start && P.end){ resetNogos(); doTrace(); }
 });
 
 // slider: aggiorna etichetta e, se una traccia c'e' gia', ricalcola
