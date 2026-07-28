@@ -6,7 +6,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Tracciatori Carbonari (v74)</title>
+<title>Tracciatori Carbonari (v75)</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -85,7 +85,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // CHECK_VERSION: controlla version.txt (con anti-cache forzato nel fetch, che
 // bypassa anche la CDN di GitHub Pages) e ricarica se e' uscita una versione nuova.
 (function(){
-  var LOCAL='v74';
+  var LOCAL='v75';
   fetch('version.txt?_='+Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.text() : null; })
     .then(function(txt){
@@ -105,7 +105,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build memoria-pulita v74</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build verifica-veloce v75</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -145,7 +145,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           Sempre attivi: esclusione dei tratti vietati (access privato/no) e delle ciclabili,
           direttamente nel calcolo del percorso.
         </div>
-        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v74)</button>
+        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v75)</button>
         <div id="regolePanel" style="display:none;margin-top:8px;padding:10px;background:#f2efe6;border-radius:8px;font-size:12px;line-height:1.5;color:#3a3a3a">
           <b>Regole attive (build v60)</b><br>
           <b>Asfalto (rosso):</b> strade primary/secondary/tertiary; strade comunali (unclassified/residential) senza tag fondo; qualsiasi surface pavimentato; asfalto certo da ESRI (WARM&lt;0.08, SAT&lt;0.17).<br>
@@ -189,8 +189,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           <div class="m" id="pts">&mdash; punti</div>
           <div class="bd" id="bd"></div>
         </div>
-        <div id="verifyWrap" style="display:none"><button class="act" id="verify">Verifica fondo (satellite)</button></div>
-        <div id="verifyFineWrap" style="display:none"><button class="act" id="verifyFine">Verifica fondo FINE (sampler, spezza i grigi)</button></div>
+        <div id="verifyFineWrap" style="display:none"><button class="act" id="verifyFine">Verifica fondo (spezza i tratti incerti)</button></div>
         <div id="esriPtWrap" style="display:none">
           <button class="act" id="corrPt">Correggi fondo di un punto</button>
           <div id="corrPanel" style="display:none;margin-top:6px;padding:8px;background:#f2efe6;border-radius:8px">
@@ -980,10 +979,8 @@ function renderSegs(){
   }
   // il tasto verifica resta sempre disponibile finche' c'e' una traccia:
   // dopo un "Rifai" si deve poter ricontrollare il fondo della nuova traccia
-  var vw=document.getElementById("verifyWrap"); if(vw) vw.style.display = lastSegs.length ? "block" : "none";
   var vfw=document.getElementById("verifyFineWrap"); if(vfw) vfw.style.display = lastSegs.length ? "block" : "none";
   var ew=document.getElementById("esriPtWrap"); if(ew) ew.style.display = lastSegs.length ? "block" : "none";
-  var vb=document.getElementById("verify"); if(vb) vb.disabled=false;
 }
 
 function samplePoints(ll,n){ var out=[]; if(ll.length<=n) return ll.slice(); for(var i=0;i<n;i++){ var t=(i+0.5)/n; out.push(ll[Math.floor(t*(ll.length-1))]); } return out; }
@@ -1287,46 +1284,7 @@ async function passataEsriAsfalto(){
   }catch(e){ return 0; }
 }
 
-async function verifyFond(){
-  if(!lastSegs.length){ toast("Traccia prima un percorso"); return; }
-  setBusy(true);
-  var nEsri = 0;   // ESRI ora e' on-demand (clicca un punto), non scansione automatica
 
-  // AGEA classifica gli incerti (erba/terra/sterrato/asfalto)
-  var daVerif=[]; for(var i=0;i<lastSegs.length;i++){ var lv=lastSegs[i].level; if(lv==="incerto" && !lastSegs[i].corretto) daVerif.push(i); }
-  if(!daVerif.length){ setStatus("Nessun tratto incerto da verificare. Per un punto specifico usa 'Verifica punto (ESRI)'."); finalizzaVerifica(0,0); setBusy(false); return; }
-
-  var budget=45, per=Math.max(1, Math.min(4, Math.round(budget/daVerif.length)));
-  var points=[], ranges=[];
-  daVerif.forEach(function(si){
-    var pts=samplePoints(lastSegs[si].ll, per);
-    var a=points.length;
-    pts.forEach(function(p){ points.push([p[1],p[0]]); });
-    ranges.push([si,a,points.length]);
-  });
-  setStatus("Verifica AGEA su "+daVerif.length+" tratti ("+points.length+" punti)... il sampler potrebbe svegliarsi.");
-  fetch(SAMPLER+"/surface",{method:"POST",body:JSON.stringify({points:points})})
-    .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
-    .then(function(j){
-      var res=j.results||[], changed=0;
-      ranges.forEach(function(rg){
-        var si=rg[0], g=[]; for(var k=rg[1];k<rg[2];k++){ if(res[k]&&res[k].guess) g.push(res[k].guess); }
-        var v=majority(g);
-        if(v==="erba"){ lastSegs[si].level="erba"; lastSegs[si].color="#4CAF50"; lastSegs[si].label="Erba"; changed++; }
-        else if(v==="terra"){ lastSegs[si].level="terra"; lastSegs[si].color="#8B5A2B"; lastSegs[si].label="Terra"; changed++; }
-        else if(v==="asfalto"){ lastSegs[si].level="rosso"; lastSegs[si].color="#DB4B3F"; lastSegs[si].label="Asfalto"; changed++; }
-        // incerto/coperto/errore -> resta grigio
-      });
-      renderSegs();
-      finalizzaVerifica(nEsri, changed);
-      var conteggio={};
-      res.forEach(function(r){ var k=(r&&r.guess)||"vuoto"; conteggio[k]=(conteggio[k]||0)+1; });
-      var dettaglio=Object.keys(conteggio).map(function(k){return k+": "+conteggio[k];}).join(", ");
-      setStatus("Fondo verificato. ESRI asfalto: "+nEsri+" | AGEA: "+changed+"/"+daVerif.length+" risolti. ("+dettaglio+")");
-      setBusy(false);
-    })
-    .catch(function(e){ setStatus("Verifica AGEA non riuscita ("+e.message+"). ESRI asfalto: "+nEsri+" tratti."); finalizzaVerifica(nEsri,0); setBusy(false); });
-}
 
 function finalizzaVerifica(nEsri, nAgea){
   var scarti=0; lastSegs.forEach(function(x){ if(x.level==="rosso"||x.level==="incerto") scarti++; });
@@ -1370,7 +1328,7 @@ async function fetchLeg(a,b,nogos,extra){
 
 function setBusy(on){
   // disabilita/riabilita tutti i pulsanti d'azione, dando il feedback visivo "sto lavorando"
-  ['trace','verify','verifyFine','optimize','evitaBtn','avoidSteep','loadGpx','pickCoord'].forEach(function(id){
+  ['trace','verifyFine','optimize','evitaBtn','avoidSteep','loadGpx','pickCoord'].forEach(function(id){
     var b=document.getElementById(id);
     if(b){ b.disabled=on; b.style.opacity=on?'0.5':''; b.style.cursor=on?'wait':''; }
   });
@@ -1709,7 +1667,6 @@ document.getElementById('avoidSteep').onclick=function(){
   doTrace();
 };
 
-document.getElementById('verify').onclick=verifyFond;
 
 // VERIFICA FONDO FINE (v62): spezza ogni tratto INCERTO in sotto-segmenti col
 // sampler, invece di ricolorare tutto il tratto con un voto di maggioranza.
@@ -1728,7 +1685,7 @@ async function verifyFineFond(){
   setStatus("Verifica FINE: campiono "+daVerif.length+" tratti in un'unica passata... (il server puo' svegliarsi)");
   var results;
   try{
-    results=await window.TCsampler.sampleLegsBatch(legs, {stepM:25, maxPer:20, minSubM:50, blocco:60,
+    results=await window.TCsampler.sampleLegsBatch(legs, {stepM:25, maxPer:20, minSubM:50, blocco:120,
       onProgress:function(f,t){ setStatus("Verifica FINE: blocco "+f+"/"+t+"..."); }});
   }catch(e){ toast("Errore sampler: "+e.message); setBusy(false); return; }
   var totSub=0, risolti=0;
