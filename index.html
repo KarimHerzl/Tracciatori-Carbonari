@@ -6,7 +6,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Tracciatori Carbonari (v70)</title>
+<title>Tracciatori Carbonari (v72)</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -85,7 +85,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // CHECK_VERSION: controlla version.txt (con anti-cache forzato nel fetch, che
 // bypassa anche la CDN di GitHub Pages) e ricarica se e' uscita una versione nuova.
 (function(){
-  var LOCAL='v70';
+  var LOCAL='v72';
   fetch('version.txt?_='+Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.text() : null; })
     .then(function(txt){
@@ -105,7 +105,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build agea-ciclo v70</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build punti-tratta v72</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -153,7 +153,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           <input type="checkbox" id="escludiIllegali" checked style="accent-color:var(--brass)">
           Escludi ciclabili e accessi privati (sempre)
         </label>
-        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v70)</button>
+        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v72)</button>
         <div id="regolePanel" style="display:none;margin-top:8px;padding:10px;background:#f2efe6;border-radius:8px;font-size:12px;line-height:1.5;color:#3a3a3a">
           <b>Regole attive (build v60)</b><br>
           <b>Asfalto (rosso):</b> strade primary/secondary/tertiary; strade comunali (unclassified/residential) senza tag fondo; qualsiasi surface pavimentato; asfalto certo da ESRI (WARM&lt;0.08, SAT&lt;0.17).<br>
@@ -464,15 +464,21 @@ function clearBase(){
   if(typeof lidarLayer!=='undefined' && lidarLayer){map.removeLayer(lidarLayer);lidarLayer=null;lidarSrcCur=null;}
   ['bSat','bAgea','bNir','bTopo','bLidar'].forEach(function(id){var e=document.getElementById(id); if(e) e.classList.remove('on');});
 }
-var ageaIdx=0, ageaChiave='';
-function showAgea(){
+// showAgea(ciclo): con ciclo=true (clic sul pulsante) passa alla sorgente
+// successiva fra quelle che coprono il punto. Senza, MANTIENE quella scelta.
+// La scelta dell'utente non viene mai scavalcata dagli spostamenti sulla mappa:
+// se la sorgente scelta copre ancora il punto, resta quella anche se bianca --
+// sara' l'utente a ripremere AGEA per cambiarla.
+function showAgea(ciclo){
   var cand=ageaCandidati();
   if(!cand.length){ toast('Nessuna ortofoto regionale in questa zona'); return; }
-  // se ripremo AGEA restando nella stessa zona, passo alla sorgente successiva
-  var ch=cand.map(function(s){return s.name;}).join('|');
-  if(ch===ageaChiave && ageaName) ageaIdx=(ageaIdx+1)%cand.length; else ageaIdx=0;
-  ageaChiave=ch;
-  var src=cand[ageaIdx];
+  var idx=-1;
+  for(var i=0;i<cand.length;i++) if(cand[i].name===ageaName) idx=i;
+  var src;
+  if(ciclo && idx>=0)   src=cand[(idx+1)%cand.length];   // ripremuto: la successiva
+  else if(idx>=0)       src=cand[idx];                   // gia' scelta e valida: la tengo
+  else                  src=cand[0];                     // prima volta o non piu' valida
+  var pos=0; for(var j=0;j<cand.length;j++) if(cand[j].name===src.name) pos=j;
   clearBase();
   var opt={layers:src.layer,styles:src.styles||'',format:'image/jpeg',maxZoom:21,attribution:src.name};
   if(src.minZoom){ opt.minZoom=src.minZoom; }  // sotto questo zoom il servizio mostra un reticolo: meglio non chiederlo
@@ -483,15 +489,15 @@ function showAgea(){
   ageaLayer.addTo(map); ageaName=src.name;
   document.getElementById('bAgea').classList.add('on');
   if(cand.length>1){
-    toast('Ortofoto: '+src.name+' ('+(ageaIdx+1)+'/'+cand.length+') - se e\' bianca, ripremi AGEA');
-    setStatus('Ortofoto '+src.name+'. Qui si sovrappongono '+cand.length+' sorgenti regionali: se l\'immagine e\' bianca ripremi AGEA per la successiva.');
+    toast('Ortofoto: '+src.name+' ('+(pos+1)+'/'+cand.length+') - se e\' bianca, ripremi AGEA');
+    setStatus('Ortofoto '+src.name+' ('+(pos+1)+' di '+cand.length+' sorgenti che coprono questa zona). Resta agganciata anche spostandoti: ripremi AGEA per cambiarla.');
   }else{
     toast('Ortofoto: '+src.name);
   }
 }
 document.getElementById('bSat').onclick=function(){clearBase();sat.addTo(map);this.classList.add('on');};
 document.getElementById('bTopo').onclick=function(){clearBase();topo.addTo(map);this.classList.add('on');};
-document.getElementById('bAgea').onclick=showAgea;
+document.getElementById('bAgea').onclick=function(){ showAgea(true); };
 var nirLayer=null;
 
 // ============================================================================
@@ -574,8 +580,11 @@ document.getElementById('bNir').onclick=function(){
 };
 map.on('moveend',function(){
   if(!ageaLayer)return;
-  var srcNow=pickAgea();
-  if(srcNow && srcNow.name!==ageaName) showAgea();
+  var cand=ageaCandidati();
+  if(!cand.length) return;                       // fuori copertura: lascio com'e'
+  for(var i=0;i<cand.length;i++)
+    if(cand[i].name===ageaName) return;          // la scelta copre ancora: NON tocco nulla
+  showAgea(false);                               // solo qui: la scelta non vale piu'
 });
 
 var P={start:null,end:null}, armed=null, routeLayer=null, mkS=null, mkE=null, lastCoords=null, lastSegs=[], VIAS=[];
@@ -639,6 +648,14 @@ function setPoint(kind,lat,lng,label){
 }
 
 map.on('click',function(e){
+  // modo "punti forzati di una tratta": ha la precedenza e resta attivo per
+  // piu' clic di seguito (si aggiungono piu' passaggi senza riarmare ogni volta)
+  if(armedLeg!==null){
+    var n=legPuntiAdd(armedLeg,e.latlng.lat,e.latlng.lng);
+    drawLegPts(); refreshLegs();
+    setStatus('Tratta '+legNome(armedLeg)+': '+n+' punto/i forzato/i. Continua a cliccare, poi premi "Rifai i punti".');
+    return;
+  }
   if(!armed)return;
   if(armed==='via'){
     addVia(e.latlng.lat,e.latlng.lng,null);
@@ -1309,8 +1326,10 @@ function finalizzaVerifica(nEsri, nAgea){
   var ow=document.getElementById("optWrap"); if(ow) ow.style.display = scarti ? "block" : "none";
 }
 
-async function fetchLeg(a,b,nogos){
-  var lonlats=a.lng.toFixed(6)+','+a.lat.toFixed(6)+'|'+b.lng.toFixed(6)+','+b.lat.toFixed(6);
+async function fetchLeg(a,b,nogos,extra){
+  // extra = punti di passaggio FORZATI che appartengono solo a questa tratta
+  var catena=[a].concat(extra||[]).concat([b]);
+  var lonlats=catena.map(function(p){ return p.lng.toFixed(6)+','+p.lat.toFixed(6); }).join('|');
   function build(ng){ var u=BROUTER+'/brouter?lonlats='+lonlats+'&profile='+profile()+'&format=geojson'; if(ng&&ng.length) u+='&nogos='+ng.join('|'); return u; }
   // fetch con timeout: se BRouter dorme o non risponde, non restare appeso all'infinito
   function fetchT(url, ms){
@@ -1381,6 +1400,45 @@ var PIN={}, LEGGEO=[];
 function pinKey(a,b){
   return a.lat.toFixed(5)+','+a.lng.toFixed(5)+'>'+b.lat.toFixed(5)+','+b.lng.toFixed(5);
 }
+
+// ---- PUNTI FORZATI PER TRATTA (override manuale) -------------------------
+// Sono punti di passaggio che appartengono a UNA SOLA tratta. A differenza
+// delle tappe (globali), aggiungerne uno non rinumera niente e non tocca le
+// altre tratte: quindi non puo' compromettere quelle bloccate. Chiave = coppia
+// di ancore, come per PIN, cosi' sopravvive al riordino delle tappe.
+var LEGPTS={}, armedLeg=null, legPtLayer=null;
+function legPunti(i){
+  var pts=[P.start].concat(VIAS).concat([P.end]);
+  if(i<0||i>=pts.length-1) return [];
+  return LEGPTS[pinKey(pts[i],pts[i+1])]||[];
+}
+function legPuntiAdd(i,lat,lng){
+  var pts=[P.start].concat(VIAS).concat([P.end]);
+  var k=pinKey(pts[i],pts[i+1]);
+  if(!LEGPTS[k]) LEGPTS[k]=[];
+  LEGPTS[k].push({lat:lat,lng:lng});
+  return LEGPTS[k].length;
+}
+function legPuntiPulisci(i){
+  var pts=[P.start].concat(VIAS).concat([P.end]);
+  delete LEGPTS[pinKey(pts[i],pts[i+1])];
+}
+function drawLegPts(){
+  if(legPtLayer){ map.removeLayer(legPtLayer); legPtLayer=null; }
+  var pts=[P.start].concat(VIAS).concat([P.end]);
+  var g=L.layerGroup(), qualcosa=false;
+  for(var i=0;i<pts.length-1;i++){
+    var arr=legPunti(i);
+    for(var j=0;j<arr.length;j++){
+      L.marker([arr[j].lat,arr[j].lng],{icon:L.divIcon({className:'',
+        html:'<div style="width:11px;height:11px;background:#E8A33D;border:2px solid #1b1b1b;border-radius:2px"></div>',
+        iconSize:[11,11],iconAnchor:[5,5]}),
+        title:'Punto forzato della tratta '+legNome(i)}).addTo(g);
+      qualcosa=true;
+    }
+  }
+  if(qualcosa){ legPtLayer=g; g.addTo(map); }
+}
 function pinConta(){ var n=0; for(var k in PIN) if(PIN.hasOwnProperty(k)) n++; return n; }
 
 // blocca/sblocca la TRATTA i (fra l'ancora i e la i+1)
@@ -1438,12 +1496,43 @@ function refreshLegs(){
                   :'Congela questa tratta: non verra\' piu\' ricalcolata';
       if(bloc) b.style.background='#E8B04B';
       b.onclick=function(){ toggleLockLeg(i); };
-      row.appendChild(lbl); row.appendChild(b); el.appendChild(row);
+      row.appendChild(lbl); row.appendChild(b);
+      if(!bloc){
+        var np=legPunti(i).length;
+        var pb=document.createElement('button');
+        pb.textContent=(armedLeg===i)?'clicca...':('punti'+(np?(' '+np):''));
+        pb.title='Passaggi forzati SOLO per questa tratta: clicca il pulsante, poi i punti sulla mappa. Non tocca le tappe ne\' le altre tratte.';
+        if(armedLeg===i) pb.style.background='#E8A33D';
+        pb.onclick=function(){
+          if(armedLeg===i){ armedLeg=null; setStatus('Inserimento punti annullato.'); refreshLegs(); return; }
+          armedLeg=i; armed=null;
+          setStatus('Tratta '+legNome(i)+': clicca sulla mappa i punti di passaggio forzati. Ripremi "clicca..." per finire, poi "Rifai i punti" per ricalcolare SOLO questa tratta.');
+          toast('Clicca sulla mappa i passaggi forzati di '+legNome(i));
+          refreshLegs();
+        };
+        row.appendChild(pb);
+        if(np){
+          var cb=document.createElement('button');
+          cb.textContent='azzera';
+          cb.title='Toglie i punti forzati di questa tratta';
+          cb.onclick=function(){ legPuntiPulisci(i); armedLeg=null; drawLegPts(); refreshLegs();
+                                 if(lastCoords&&P.start&&P.end) doTrace(); };
+          row.appendChild(cb);
+        }
+      }
+      el.appendChild(row);
     })(i);
   }
   var tutte=document.createElement('div'); tutte.className='viarow';
   var info=document.createElement('span'); info.style.flex='1'; info.style.fontSize='11px'; info.style.color='#5a6b5f';
   info.textContent=nBl+' di '+n+' tratte bloccate';
+  if(armedLeg!==null){
+    var ap=document.createElement('button'); ap.textContent='Rifai i punti';
+    ap.style.background='#E8A33D';
+    ap.onclick=function(){ armedLeg=null; refreshLegs();
+                           if(lastCoords&&P.start&&P.end) doTrace(); };
+    tutte.appendChild(info); tutte.appendChild(ap); el.appendChild(tutte); return;
+  }
   var sb=document.createElement('button'); sb.textContent='sblocca tutte';
   sb.onclick=function(){ PIN={}; refreshLegs(); drawPinned(); setStatus('Tutte le tratte sbloccate.'); };
   tutte.appendChild(info); tutte.appendChild(sb); el.appendChild(tutte);
@@ -1503,12 +1592,14 @@ async function doTrace(){
         // tratta CONGELATA: non la ricalcolo, qualunque cosa sia cambiato.
         f=PIN[pk]; _legCongelate++;
       }else{
-        var k=legKey(pts[i],pts[i+1],profile(),legNogos), cached=legGet(k);
+        var extra=legPunti(i);
+        var firmaExtra=extra.map(function(p){return p.lat.toFixed(5)+','+p.lng.toFixed(5);}).join('+');
+        var k=legKey(pts[i],pts[i+1],profile()+'#'+firmaExtra,legNogos), cached=legGet(k);
         if(cached){ f=cached; _legRiusate++; }
         else{
           var ok=true;
-          try{ f=await fetchLeg(pts[i],pts[i+1],legNogos); }
-          catch(e){ f=await fetchLeg(pts[i],pts[i+1],window.NOGOS||[]); ok=false; }  // troppo vincolato: ritento libero
+          try{ f=await fetchLeg(pts[i],pts[i+1],legNogos,extra); }
+          catch(e){ f=await fetchLeg(pts[i],pts[i+1],window.NOGOS||[],extra); ok=false; }  // troppo vincolato: ritento libero
           // BUG v66-v68 (corretto in v69): il ripiego "libero" e' una tratta PEGGIORE
           // (ignora gli evitamenti, quindi piu' asfalto). Prima veniva messa in
           // memoria sotto la chiave della richiesta VINCOLATA: da quel momento ogni
@@ -1561,7 +1652,7 @@ async function doTrace(){
         return doTrace();
       }
     }
-    refreshLegs(); drawPinned();
+    refreshLegs(); drawPinned(); drawLegPts();
     var nSteep=steepPoints(35).length;
     var sw=document.getElementById('steepWrap'); if(sw) sw.style.display=nSteep?'block':'none';
     var ancore='';
