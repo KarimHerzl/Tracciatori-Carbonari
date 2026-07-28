@@ -6,7 +6,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Tracciatori Carbonari (v69)</title>
+<title>Tracciatori Carbonari (v70)</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -85,7 +85,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // CHECK_VERSION: controlla version.txt (con anti-cache forzato nel fetch, che
 // bypassa anche la CDN di GitHub Pages) e ricarica se e' uscita una versione nuova.
 (function(){
-  var LOCAL='v69';
+  var LOCAL='v70';
   fetch('version.txt?_='+Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.text() : null; })
     .then(function(txt){
@@ -105,7 +105,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build diagnosi-asfalto v69</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build agea-ciclo v70</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -153,7 +153,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           <input type="checkbox" id="escludiIllegali" checked style="accent-color:var(--brass)">
           Escludi ciclabili e accessi privati (sempre)
         </label>
-        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v69)</button>
+        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v70)</button>
         <div id="regolePanel" style="display:none;margin-top:8px;padding:10px;background:#f2efe6;border-radius:8px;font-size:12px;line-height:1.5;color:#3a3a3a">
           <b>Regole attive (build v60)</b><br>
           <b>Asfalto (rosso):</b> strade primary/secondary/tertiary; strade comunali (unclassified/residential) senza tag fondo; qualsiasi surface pavimentato; asfalto certo da ESRI (WARM&lt;0.08, SAT&lt;0.17).<br>
@@ -444,14 +444,18 @@ var AGEA_SRC=[
  {name:'Croazia DGU DOF',bbox:[13.40,42.30,19.50,46.60],url:'https://geoportal.dgu.hr/services/inspire/orthophoto_2023_2024/wms',layer:'OI.OrthoimageCoverage',styles:''}
 ];
 var ageaLayer=null, ageaName='';
-function pickAgea(){
-  var c=map.getCenter();
+// tutte le ortofoto che coprono il punto (i bbox regionali si sovrappongono:
+// es. Millesimo cade sia nel bbox Piemonte sia in quello Liguria, ma il dato
+// vero e' solo quello ligure). Ripremendo AGEA si passa alla successiva.
+function ageaCandidati(){
+  var c=map.getCenter(), out=[];
   for(var i=0;i<AGEA_SRC.length;i++){
     var b=AGEA_SRC[i].bbox;
-    if(c.lng>=b[0]&&c.lng<=b[2]&&c.lat>=b[1]&&c.lat<=b[3]) return AGEA_SRC[i];
+    if(c.lng>=b[0]&&c.lng<=b[2]&&c.lat>=b[1]&&c.lat<=b[3]) out.push(AGEA_SRC[i]);
   }
-  return null;
+  return out;
 }
+function pickAgea(){ var c=ageaCandidati(); return c.length?c[0]:null; }
 function clearBase(){
   if(map.hasLayer(sat))map.removeLayer(sat);
   if(map.hasLayer(topo))map.removeLayer(topo);
@@ -460,9 +464,15 @@ function clearBase(){
   if(typeof lidarLayer!=='undefined' && lidarLayer){map.removeLayer(lidarLayer);lidarLayer=null;lidarSrcCur=null;}
   ['bSat','bAgea','bNir','bTopo','bLidar'].forEach(function(id){var e=document.getElementById(id); if(e) e.classList.remove('on');});
 }
+var ageaIdx=0, ageaChiave='';
 function showAgea(){
-  var src=pickAgea();
-  if(!src){ toast('Nessuna ortofoto regionale in questa zona'); return; }
+  var cand=ageaCandidati();
+  if(!cand.length){ toast('Nessuna ortofoto regionale in questa zona'); return; }
+  // se ripremo AGEA restando nella stessa zona, passo alla sorgente successiva
+  var ch=cand.map(function(s){return s.name;}).join('|');
+  if(ch===ageaChiave && ageaName) ageaIdx=(ageaIdx+1)%cand.length; else ageaIdx=0;
+  ageaChiave=ch;
+  var src=cand[ageaIdx];
   clearBase();
   var opt={layers:src.layer,styles:src.styles||'',format:'image/jpeg',maxZoom:21,attribution:src.name};
   if(src.minZoom){ opt.minZoom=src.minZoom; }  // sotto questo zoom il servizio mostra un reticolo: meglio non chiederlo
@@ -472,7 +482,12 @@ function showAgea(){
   ageaLayer=L.tileLayer.wms(src.url,opt);
   ageaLayer.addTo(map); ageaName=src.name;
   document.getElementById('bAgea').classList.add('on');
-  toast('Ortofoto: '+src.name);
+  if(cand.length>1){
+    toast('Ortofoto: '+src.name+' ('+(ageaIdx+1)+'/'+cand.length+') - se e\' bianca, ripremi AGEA');
+    setStatus('Ortofoto '+src.name+'. Qui si sovrappongono '+cand.length+' sorgenti regionali: se l\'immagine e\' bianca ripremi AGEA per la successiva.');
+  }else{
+    toast('Ortofoto: '+src.name);
+  }
 }
 document.getElementById('bSat').onclick=function(){clearBase();sat.addTo(map);this.classList.add('on');};
 document.getElementById('bTopo').onclick=function(){clearBase();topo.addTo(map);this.classList.add('on');};
