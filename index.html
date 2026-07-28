@@ -6,7 +6,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Tracciatori Carbonari (v78)</title>
+<title>Tracciatori Carbonari (v79)</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -85,7 +85,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // CHECK_VERSION: controlla version.txt (con anti-cache forzato nel fetch, che
 // bypassa anche la CDN di GitHub Pages) e ricarica se e' uscita una versione nuova.
 (function(){
-  var LOCAL='v78';
+  var LOCAL='v79';
   fetch('version.txt?_='+Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.text() : null; })
     .then(function(txt){
@@ -105,7 +105,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build verifica-veloce v78</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build verifica-veloce v79</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -145,7 +145,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           Sempre attivi: esclusione dei tratti vietati (access privato/no) e delle ciclabili,
           direttamente nel calcolo del percorso.
         </div>
-        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v78)</button>
+        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v79)</button>
         <div id="regolePanel" style="display:none;margin-top:8px;padding:10px;background:#f2efe6;border-radius:8px;font-size:12px;line-height:1.5;color:#3a3a3a">
           <b>Regole attive (build v60)</b><br>
           <b>Asfalto (rosso):</b> strade primary/secondary/tertiary; strade comunali (unclassified/residential) senza tag fondo; qualsiasi surface pavimentato; asfalto certo da ESRI (WARM&lt;0.08, SAT&lt;0.17).<br>
@@ -503,7 +503,7 @@ var nirLayer=null;
 // ============================================================================
 var LIDAR_SRC=[
   // Solo DTM (terreno nudo): serve a vedere il solco della strada SOTTO le
-  // chiome. Le serie DSM sono state tolte (v78): non servivano allo scopo.
+  // chiome. Le serie DSM sono state tolte (v79): non servivano allo scopo.
   // Piu' sorgenti possono coprire lo stesso punto (Piemonte e Liguria si
   // sovrappongono nel riquadro 7.47-9.12 / 43.96-44.7): ripremendo LIDAR si
   // passa alla sorgente successiva tra quelle che coprono il centro mappa
@@ -511,6 +511,17 @@ var LIDAR_SRC=[
   // PCN: servizio solo http -> passa dal ponte https sul sampler (/wms/lidar).
   // Copertura a chiazze lungo i fiumi: dove non c'e' dato la tile e' bianca.
   // (la serie .1x1.T1.* del Piemonte esiste ma sul Monferrato e' vuota.)
+  // ICE: rilievo ombreggiato REGIONALE del Piemonte (DTM LiDAR 5 m, ripresa
+  // 2009-2011), gia' calcolato dalla Regione e servito in https via MapProxy:
+  // niente ponte. Copre TUTTO il territorio (colline comprese), non solo i
+  // fiumi come il PCN. A 5 m il solco fine puo' sfumare dove il PCN 1m lo
+  // vedrebbe: sono complementari, il ripremi li cicla sullo stesso punto.
+  // Endpoint, layer e bbox dal capabilities WEBCAT (verificato 30/07/2026).
+  { name:'Ombreggiato ICE 5m (Piemonte intero)', kind:'wms', confermato:true,
+    bbox:[4.83,43.82,11.14,46.63],
+    url:'https://geomap.reteunitaria.piemonte.it/mapproxy/service?',
+    layer:'regp_ombreggiature',
+    attr:'Regione Piemonte - ICE 2009-2011 (CC BY 4.0)', maxZoom:19, minZoom:10 },
   { name:'LiDAR PCN 1m (Piemonte)', kind:'wms', confermato:true,
     bbox:[6.48,43.96,9.12,46.06],
     url:'https://sampler-fondo.onrender.com/wms/lidar?regione=piemonte',
