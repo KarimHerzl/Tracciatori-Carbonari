@@ -6,7 +6,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Tracciatori Carbonari (v72)</title>
+<title>Tracciatori Carbonari (v73)</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -85,7 +85,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // CHECK_VERSION: controlla version.txt (con anti-cache forzato nel fetch, che
 // bypassa anche la CDN di GitHub Pages) e ricarica se e' uscita una versione nuova.
 (function(){
-  var LOCAL='v72';
+  var LOCAL='v73';
   fetch('version.txt?_='+Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.text() : null; })
     .then(function(txt){
@@ -105,7 +105,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build punti-tratta v72</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build topo-flag v73</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -141,19 +141,11 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           <input type="range" min="0" max="3" step="1" value="1" id="aggr">
         </div>
         <div class="info" style="margin-top:6px">Sposta a destra per pescare piu' sterrato (deviazioni piu' lunghe). Se una traccia c'e' gia', si ricalcola da sola.</div>
-        <label class="info" style="display:flex;gap:8px;align-items:center;margin-top:10px;cursor:pointer">
-          <input type="checkbox" id="soloLegali" style="accent-color:var(--brass)">
-          Escludi i tratti vietati (access privato/no)
-        </label>
-        <label class="info" style="display:flex;gap:8px;align-items:center;margin-top:8px;cursor:pointer">
-          <input type="checkbox" id="evitaSentieri" style="accent-color:var(--brass)">
-          Evita sentieri/mulattiere (magenta)
-        </label>
-        <label class="info" style="display:flex;gap:8px;align-items:center;margin-top:8px;cursor:pointer">
-          <input type="checkbox" id="escludiIllegali" checked style="accent-color:var(--brass)">
-          Escludi ciclabili e accessi privati (sempre)
-        </label>
-        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v72)</button>
+        <div class="info" style="margin-top:10px;font-size:11px;color:#5a6b5f">
+          Sempre attivi: esclusione dei tratti vietati (access privato/no) e delle ciclabili,
+          direttamente nel calcolo del percorso.
+        </div>
+        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v73)</button>
         <div id="regolePanel" style="display:none;margin-top:8px;padding:10px;background:#f2efe6;border-radius:8px;font-size:12px;line-height:1.5;color:#3a3a3a">
           <b>Regole attive (build v60)</b><br>
           <b>Asfalto (rosso):</b> strade primary/secondary/tertiary; strade comunali (unclassified/residential) senza tag fondo; qualsiasi surface pavimentato; asfalto certo da ESRI (WARM&lt;0.08, SAT&lt;0.17).<br>
@@ -216,7 +208,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
         </div>
         <div id="steepWrap" style="display:none"><button class="act" id="avoidSteep">Evita i tratti ripidi (&gt;35%)</button></div>
         <div id="optWrap" style="display:none"><button class="act" id="optimize">Rifai evitando asfalto e incerti</button></div>
-        <div id="evitaWrap" style="display:none"><button class="act" id="evitaBtn">Evita sentieri e tratti vietati</button></div>
+        <div id="evitaWrap" style="display:none"><button class="act" id="evitaBtn">Evita sentieri e mulattiere</button></div>
         <button class="act" id="nav">Naviga (GPS del telefono)</button>
         <button class="act" id="dl">Scarica GPX (per Garmin)</button>
         <button class="act" id="share">Invia via email</button>
@@ -486,7 +478,7 @@ function showAgea(ciclo){
   else if(src.v130){ opt.version='1.3.0'; }      // servizi che pretendono la 1.3.0 (es. IGN Francia) ma in Web Mercator
   else { opt.version='1.1.1'; }
   ageaLayer=L.tileLayer.wms(src.url,opt);
-  ageaLayer.addTo(map); ageaName=src.name;
+  ageaLayer.addTo(map); ageaName=src.name; drawRouteLines();
   document.getElementById('bAgea').classList.add('on');
   if(cand.length>1){
     toast('Ortofoto: '+src.name+' ('+(pos+1)+'/'+cand.length+') - se e\' bianca, ripremi AGEA');
@@ -495,8 +487,10 @@ function showAgea(ciclo){
     toast('Ortofoto: '+src.name);
   }
 }
-document.getElementById('bSat').onclick=function(){clearBase();sat.addTo(map);this.classList.add('on');};
-document.getElementById('bTopo').onclick=function(){clearBase();topo.addTo(map);this.classList.add('on');};
+document.getElementById('bSat').onclick=function(){clearBase();sat.addTo(map);this.classList.add('on');drawRouteLines();};
+// sulla topo l'alone della traccia diventa scuro: ridisegno subito, senza
+// aspettare uno zoom, altrimenti resta l'alone bianco invisibile sul chiaro
+document.getElementById('bTopo').onclick=function(){clearBase();topo.addTo(map);this.classList.add('on');drawRouteLines();};
 document.getElementById('bAgea').onclick=function(){ showAgea(true); };
 var nirLayer=null;
 
@@ -563,7 +557,7 @@ function showLidar(){
     toast('LIDAR '+etich+' - ripremi per passare a '+(eDsm?'DTM':'DSM')+'.');
     setStatus('LIDAR '+etich+'. Confronta DTM e DSM sullo stesso punto: corridoio nel DTM + chiome nel DSM = pista sotto bosco. Se e\' bianco, qui non c\'e\' copertura.');
   }
-  lidarLayer.addTo(map); lidarSrcCur=src;
+  lidarLayer.addTo(map); lidarSrcCur=src; drawRouteLines();
   document.getElementById('bLidar').classList.add('on');
 }
 document.getElementById('bLidar').onclick=showLidar;
@@ -574,7 +568,7 @@ document.getElementById('bNir').onclick=function(){
   clearBase();
   nirLayer=L.tileLayer.wms('https://geomap.reteunitaria.piemonte.it/mapproxy/service',
     {layers:'regp_ortofoto_ice_nir_2010',styles:'',format:'image/jpeg',version:'1.1.1',maxZoom:20,attribution:'ICE NIR 2009-2011 - Regione Piemonte'});
-  nirLayer.addTo(map);
+  nirLayer.addTo(map); drawRouteLines();
   document.getElementById('bNir').classList.add('on');
   toast('Infrarosso ICE 2009-2011 (vegetazione = rosso)');
 };
@@ -605,8 +599,10 @@ var LIVELLI=[10,25,45,75];
 function profile(){
   var base=parseInt(document.getElementById('aggr').value,10);
   var lvl=Math.min(LIVELLI.length-1, base+(window.PASS||0));   // ogni passata alza la durezza
-  var soloLegali=document.getElementById('soloLegali').checked;
-  return (soloLegali?'offroad-legal-':'offroad-max-')+LIVELLI[lvl];
+  // La variante LEGALE e' ora il comportamento predefinito (niente piu' flag):
+  // access=private/no sono escluse direttamente nel calcolo. Per tornare alla
+  // variante permissiva basta rimettere 'offroad-max-' qui.
+  return 'offroad-legal-'+LIVELLI[lvl];
 }
 
 function viaIcon(n){return L.divIcon({className:'',html:'<div class="mk v"><span>'+n+'</span></div>',iconSize:[22,22],iconAnchor:[5,20]});}
@@ -878,9 +874,7 @@ function drawColored(coords,messages){
 function autoEvita(){
   window._autoEvitaCount=(window._autoEvitaCount||0)+1;
   var giro=window._autoEvitaCount;
-  var evitaSent=document.getElementById('evitaSentieri') && document.getElementById('evitaSentieri').checked;
-  var esclIlleg=document.getElementById('escludiIllegali') && document.getElementById('escludiIllegali').checked;
-  if(!evitaSent && !esclIlleg){ return; }
+  var evitaSent=true, esclIlleg=true;   // il pulsante "Evita sentieri e mulattiere" li fa entrambi
   var target=[];
   lastSegs.forEach(function(sg){
     if(evitaSent && sg.level==="magenta") target.push(sg);
@@ -924,19 +918,32 @@ function routeStyleForZoom(){
   var z=map.getZoom();
   // z<=13 lontano: linea spessa. Vicino: SOTTILE ma ben VISIBILE (opacita' piena),
   // cosi' non copre il fondo per larghezza ma resta nitida sul satellitare.
-  if(z>=18) return {weight:2, opacity:1, halo:0};
-  if(z>=17) return {weight:2, opacity:1, halo:0};
-  if(z>=16) return {weight:2.5, opacity:.95, halo:2};
-  if(z>=15) return {weight:3.5, opacity:.82, halo:4};
-  if(z>=14) return {weight:4, opacity:.92, halo:5};
-  return {weight:4.5, opacity:1, halo:6};
+  var st;
+  if(z>=18)      st={weight:2,   opacity:1,   halo:0};
+  else if(z>=17) st={weight:2,   opacity:1,   halo:0};
+  else if(z>=16) st={weight:2.5, opacity:.95, halo:2};
+  else if(z>=15) st={weight:3.5, opacity:.82, halo:4};
+  else if(z>=14) st={weight:4,   opacity:.92, halo:5};
+  else           st={weight:4.5, opacity:1,   halo:6};
+  st.haloColor="#ffffff"; st.haloOpacity=st.opacity*0.35;
+  // SULLA TOPO il fondo e' chiaro: l'alone BIANCO non stacca nulla, e i colori
+  // chiari (sterrato #EDE8DA e' quasi bianco) spariscono del tutto zoomando
+  // indietro. Qui l'alone diventa scuro e l'opacita' sale, mantenendo pero' la
+  // stessa curva di attenuazione con lo zoom.
+  if(typeof topo!=='undefined' && map.hasLayer(topo)){
+    st.opacity=Math.min(1, st.opacity+0.12);
+    st.haloColor="#2a2a2a";
+    st.haloOpacity=0.55;
+    if(st.halo<2) st.halo=2;      // un filo di contorno serve sempre sul chiaro
+  }
+  return st;
 }
 function drawRouteLines(){
   if(!routeLayer||!lastSegs.length) return;
   // pulisco solo le linee della traccia (non i marker)
   routeLayer.eachLayer(function(l){ if(l instanceof L.Polyline) routeLayer.removeLayer(l); });
   var st=routeStyleForZoom();
-  if(st.halo>0 && window._allLine) L.polyline(window._allLine,{color:"#ffffff",weight:st.weight+st.halo,opacity:st.opacity*0.35}).addTo(routeLayer);
+  if(st.halo>0 && window._allLine) L.polyline(window._allLine,{color:st.haloColor,weight:st.weight+st.halo,opacity:st.haloOpacity}).addTo(routeLayer);
   lastSegs.forEach(function(s){ if(s.ll.length>=2) L.polyline(s.ll,{color:s.color,weight:st.weight,opacity:st.opacity}).addTo(routeLayer); });
   lastSegs.forEach(function(s){
     var p=s.pend||0;
@@ -1805,11 +1812,9 @@ function optimize(){
 document.getElementById('optimize').onclick=optimize;
 document.getElementById('evitaBtn').onclick=function(){
   if(!lastSegs.length){ toast("Traccia prima un percorso"); return; }
-  var evitaSent=document.getElementById('evitaSentieri').checked;
-  var esclIlleg=document.getElementById('escludiIllegali').checked;
-  if(!evitaSent && !esclIlleg){ toast("Attiva almeno un'opzione di evitamento nel menu"); return; }
+  var evitaSent=true, esclIlleg=true;   // nessun flag: il pulsante li fa entrambi
   window._autoEvitaCount=0;   // riparte pulito
-  setStatusReset("Avvio evitamento sentieri/vietati...");
+  setStatusReset("Avvio evitamento sentieri e mulattiere...");
   autoEvita();
 };
 document.getElementById('menuFab').onclick=function(){
@@ -1823,11 +1828,10 @@ document.getElementById('mostraRegole').onclick=function(){
   var p=document.getElementById('regolePanel');
   p.style.display = p.style.display==='none' ? 'block' : 'none';
 };
-document.getElementById('soloLegali').addEventListener('change',function(){
-  if(lastCoords && P.start && P.end){ resetNogos(); doTrace(); }
-});
-// evitaSentieri ed escludiIllegali NON ritracciano da soli: sono preferenze per il
-// pulsante "Evita sentieri e tratti vietati" che l'utente preme quando vuole.
+// I tre flag (solo legali / evita sentieri / escludi ciclabili) sono stati tolti
+// in v73: erano ridondanti con i pulsanti. Ora l'esclusione di vietati e ciclabili
+// e' dentro il profilo di routing, e i sentieri li gestisce il pulsante
+// "Evita sentieri e mulattiere" quando lo premi tu.
 
 // slider: aggiorna etichetta e, se una traccia c'e' gia', ricalcola
 document.getElementById('aggr').addEventListener('input',function(){
