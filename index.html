@@ -6,7 +6,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Tracciatori Carbonari (v83)</title>
+<title>Tracciatori Carbonari (v84)</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -85,7 +85,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // CHECK_VERSION: controlla version.txt (con anti-cache forzato nel fetch, che
 // bypassa anche la CDN di GitHub Pages) e ricarica se e' uscita una versione nuova.
 (function(){
-  var LOCAL='v83';
+  var LOCAL='v84';
   fetch('version.txt?_='+Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.text() : null; })
     .then(function(txt){
@@ -105,7 +105,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build verifica-veloce v83</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build verifica-veloce v84</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -145,7 +145,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           Sempre attivi: esclusione dei tratti vietati (access privato/no) e delle ciclabili,
           direttamente nel calcolo del percorso.
         </div>
-        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v83)</button>
+        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v84)</button>
         <div id="regolePanel" style="display:none;margin-top:8px;padding:10px;background:#f2efe6;border-radius:8px;font-size:12px;line-height:1.5;color:#3a3a3a">
           <b>Regole attive (build v60)</b><br>
           <b>Asfalto (rosso):</b> strade primary/secondary/tertiary; strade comunali (unclassified/residential) senza tag fondo; qualsiasi surface pavimentato; asfalto certo da ESRI (WARM&lt;0.08, SAT&lt;0.17).<br>
@@ -613,6 +613,22 @@ var LIDAR_SRC=[
     url:'https://sampler-fondo.onrender.com/wms/lidar?regione=abruzzo',
     layer:'EL.LIDAR.ABRUZZO.1x1.DTM',
     attr:'LiDAR PST - Ministero Ambiente (CC BY 4.0)', maxZoom:19, minZoom:12 },
+  // Inghilterra (v84): Environment Agency, composito DTM 1 m del 2022, ~99%
+  // del territorio inglese - copertura piena, non a chiazze come il PCN.
+  // L'ombreggiato lo calcola il server (layer *_Hillshade_*), il servizio e'
+  // gia' https e dichiara EPSG:3857: nessun ponte, come l'IGN francese.
+  // Endpoint, nome layer e bbox presi dal capabilities Defra (31/07/2026).
+  // Sta PRIMA della voce IGN francese: il bbox dell'IGN arriva a 51.5N/-5.5W
+  // e quindi ingloba tutta l'Inghilterra del sud (Ridgeway, Wessex, Kent),
+  // dove pero' l'IGN non ha dato. Cosi' al primo click esce quella giusta.
+  // NB: SOLO Inghilterra. Il Galles (DataMapWales, copertura 100%) e la
+  // Scozia (JNCC, ~40% e a fasi) stanno su servizi separati: sono due
+  // sorgenti da aggiungere a parte, non le copre questa.
+  { name:'LiDAR EA 1m (Inghilterra)', nz:17, kind:'wms', confermato:true,
+    bbox:[-7.10,49.85,2.09,55.88],
+    url:'https://environment.data.gov.uk/spatialdata/lidar-composite-digital-terrain-model-dtm-1m/wms?',
+    layer:'Lidar_Composite_Hillshade_DTM_1m',
+    attr:'Environment Agency copyright and/or database right 2022 (OGL v3)', maxZoom:19, minZoom:12 },
   // Francia: IGN LiDAR HD, MNT ombreggiato a 50 cm, gia' https (nessun ponte).
   // Bbox limitato a est per non rubare il Piemonte alla sorgente italiana.
   { name:'IGN LiDAR HD (Francia, 50cm)', nz:18, kind:'wmts', confermato:true,
