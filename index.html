@@ -6,7 +6,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Tracciatori Carbonari (v86)</title>
+<title>Tracciatori Carbonari (v87)</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -85,7 +85,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // CHECK_VERSION: controlla version.txt (con anti-cache forzato nel fetch, che
 // bypassa anche la CDN di GitHub Pages) e ricarica se e' uscita una versione nuova.
 (function(){
-  var LOCAL='v86';
+  var LOCAL='v87';
   fetch('version.txt?_='+Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.text() : null; })
     .then(function(txt){
@@ -105,7 +105,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build verifica-veloce v86</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build verifica-veloce v87</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -145,7 +145,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           Sempre attivi: esclusione dei tratti vietati (access privato/no) e delle ciclabili,
           direttamente nel calcolo del percorso.
         </div>
-        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v86)</button>
+        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v87)</button>
         <div id="regolePanel" style="display:none;margin-top:8px;padding:10px;background:#f2efe6;border-radius:8px;font-size:12px;line-height:1.5;color:#3a3a3a">
           <b>Regole attive (build v60)</b><br>
           <b>Asfalto (rosso):</b> strade primary/secondary/tertiary; strade comunali (unclassified/residential) senza tag fondo; qualsiasi surface pavimentato; asfalto certo da ESRI (WARM&lt;0.08, SAT&lt;0.17).<br>
@@ -167,6 +167,14 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           <button id="bLidar">LIDAR</button>
         </div>
         <div class="info" style="margin-top:6px">AGEA = le stesse ortofoto lette dalla verifica fondo.</div>
+      </div>
+
+      <div class="block">
+        <div class="label">Sterrato legale (Inghilterra)</div>
+        <div class="seg">
+          <button id="bBoat">Densita byway</button>
+        </div>
+        <div class="info" style="margin-top:6px">I byway aperti a tutti sono gli unici sterrati inglesi dove si passa in moto. Piu' il colore e' pieno, piu' ce n'e'. Serve a scegliere la zona: sparisce quando ingrandisci per tracciare.</div>
       </div>
 
       <div class="block">
@@ -687,6 +695,72 @@ map.on('moveend',function(){
     if(cand[i].name===ageaName) return;          // la scelta copre ancora: NON tocco nulla
   showAgea(false);                               // solo qui: la scelta non vale piu'
 });
+
+// ===== DENSITA' BYWAY (BOAT) - Inghilterra e Galles =====
+// Griglia PRECALCOLATA in boat-densita.json: celle di 0.02 x 0.03 gradi
+// (circa 2,2 x 2,1 km), valore = km di sterrato LEGALE dentro la cella.
+// Perche' precalcolata e non interrogata al volo: i byway sono diritti di
+// passaggio iscritti in un registro legale, si spostano di qualche km
+// all'anno. Una query Overpass a ogni movimento della mappa riporterebbe
+// dritti ai timeout gia' visti con le tessere ESRI, e alla dipendenza da un
+// servizio esterno con limiti di frequenza. Cosi' invece: 15 kB caricati una
+// volta sola, nessuna chiamata di rete, funziona anche a Render addormentato.
+// Il conteggio esclude i byway che il profilo offroad-legal-uk NON userebbe
+// (taggati bridleway/path/footway, o con divieto esplicito) e quelli
+// asfaltati: quel che colora e' sterrato davvero percorribile.
+var boatGrid=null, boatLayer=null, boatAcceso=false, boatCaricando=false;
+var BOAT_ZOOM_MAX=12;   // oltre questo zoom sparisce: li' stai tracciando, non scegliendo
+// disegno su canvas e non su SVG: a zoom largo le celle a schermo sono
+// centinaia, e su una macchina non recente l'SVG arranca
+var boatRenderer=L.canvas({padding:0.2});
+
+function boatColora(){
+  if(boatLayer){ map.removeLayer(boatLayer); boatLayer=null; }
+  if(!boatAcceso || !boatGrid) return;
+  if(map.getZoom()>BOAT_ZOOM_MAX) return;
+  var b=map.getBounds(), g=boatGrid.griglia, c=boatGrid.celle, gruppo=L.layerGroup();
+  for(var k=0;k<c.length;k++){
+    var la=c[k][0]*g.dlat, lo=c[k][1]*g.dlon, km=c[k][2];
+    if(la+g.dlat<b.getSouth()||la>b.getNorth()||lo+g.dlon<b.getWest()||lo>b.getEast()) continue;
+    // scala tarata sui dati veri: mediana 0,8 km, 95mo percentile 3,7 km,
+    // massimo 10,6 km. Sopra i 5 km l'occhio non distingue piu', quindi
+    // saturo li': altrimenti tre celle eccezionali schiacciano tutto il resto.
+    var f=Math.min(1,km/5);
+    L.rectangle([[la,lo],[la+g.dlat,lo+g.dlon]],{
+      stroke:false, fillColor:'#c2410c', fillOpacity:0.10+0.55*f,
+      interactive:false, renderer:boatRenderer
+    }).addTo(gruppo);
+  }
+  boatLayer=gruppo.addTo(map);
+}
+
+function boatAvvisa(){
+  if(map.getZoom()>BOAT_ZOOM_MAX)
+    toast('Densita byway accesa: allontanati fino allo zoom '+BOAT_ZOOM_MAX+' o meno per vederla.');
+  else
+    setStatus('Densita byway: colore pieno = molto sterrato legale nella cella (2 km di lato). Sparisce oltre lo zoom '+BOAT_ZOOM_MAX+'.');
+}
+
+document.getElementById('bBoat').onclick=function(){
+  var b=this;
+  if(boatAcceso){ boatAcceso=false; b.classList.remove('on'); boatColora();
+                  setStatus('Densita byway spenta.'); return; }
+  if(boatGrid){ boatAcceso=true; b.classList.add('on'); boatColora(); boatAvvisa(); return; }
+  if(boatCaricando) return;
+  boatCaricando=true; setStatus('Carico la griglia dei byway...');
+  fetch('boat-densita.json')
+    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(function(j){
+      boatGrid=j; boatCaricando=false; boatAcceso=true;
+      b.classList.add('on'); boatColora(); boatAvvisa();
+    })
+    .catch(function(e){
+      boatCaricando=false;
+      toast('Griglia byway non caricata: '+e.message);
+      setStatus('boat-densita.json non raggiungibile: deve stare nella stessa cartella di index.html.');
+    });
+};
+map.on('moveend zoomend', boatColora);
 
 var P={start:null,end:null}, armed=null, routeLayer=null, mkS=null, mkE=null, lastCoords=null, lastSegs=[], VIAS=[];
 
