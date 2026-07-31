@@ -6,7 +6,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Tracciatori Carbonari (v85)</title>
+<title>Tracciatori Carbonari (v86)</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -85,7 +85,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // CHECK_VERSION: controlla version.txt (con anti-cache forzato nel fetch, che
 // bypassa anche la CDN di GitHub Pages) e ricarica se e' uscita una versione nuova.
 (function(){
-  var LOCAL='v85';
+  var LOCAL='v86';
   fetch('version.txt?_='+Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.text() : null; })
     .then(function(txt){
@@ -105,7 +105,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build verifica-veloce v85</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build verifica-veloce v86</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -145,7 +145,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           Sempre attivi: esclusione dei tratti vietati (access privato/no) e delle ciclabili,
           direttamente nel calcolo del percorso.
         </div>
-        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v85)</button>
+        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v86)</button>
         <div id="regolePanel" style="display:none;margin-top:8px;padding:10px;background:#f2efe6;border-radius:8px;font-size:12px;line-height:1.5;color:#3a3a3a">
           <b>Regole attive (build v60)</b><br>
           <b>Asfalto (rosso):</b> strade primary/secondary/tertiary; strade comunali (unclassified/residential) senza tag fondo; qualsiasi surface pavimentato; asfalto certo da ESRI (WARM&lt;0.08, SAT&lt;0.17).<br>
@@ -163,11 +163,10 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
         <div class="seg">
           <button id="bSat" class="on">Satellite</button>
           <button id="bAgea">AGEA</button>
-          <button id="bNir">NIR</button>
           <button id="bTopo">Topo</button>
           <button id="bLidar">LIDAR</button>
         </div>
-        <div class="info" style="margin-top:6px">AGEA = le stesse ortofoto lette dalla verifica fondo. NIR = infrarosso (solo Piemonte): la vegetazione appare rossa, le strade si staccano meglio.</div>
+        <div class="info" style="margin-top:6px">AGEA = le stesse ortofoto lette dalla verifica fondo.</div>
       </div>
 
       <div class="block">
@@ -469,9 +468,8 @@ function clearBase(){
   if(map.hasLayer(sat))map.removeLayer(sat);
   if(map.hasLayer(topo))map.removeLayer(topo);
   if(ageaLayer){map.removeLayer(ageaLayer);ageaLayer=null;ageaName='';}
-  if(nirLayer){map.removeLayer(nirLayer);nirLayer=null;}
   if(typeof lidarLayer!=='undefined' && lidarLayer){map.removeLayer(lidarLayer);lidarLayer=null;lidarSrcCur=null;}
-  ['bSat','bAgea','bNir','bTopo','bLidar'].forEach(function(id){var e=document.getElementById(id); if(e) e.classList.remove('on');});
+  ['bSat','bAgea','bTopo','bLidar'].forEach(function(id){var e=document.getElementById(id); if(e) e.classList.remove('on');});
 }
 // showAgea(ciclo): con ciclo=true (clic sul pulsante) passa alla sorgente
 // successiva fra quelle che coprono il punto. Senza, MANTIENE quella scelta.
@@ -509,11 +507,10 @@ document.getElementById('bSat').onclick=function(){clearBase();sat.addTo(map);th
 // aspettare uno zoom, altrimenti resta l'alone bianco invisibile sul chiaro
 document.getElementById('bTopo').onclick=function(){clearBase();topo.addTo(map);this.classList.add('on');drawRouteLines();};
 document.getElementById('bAgea').onclick=function(){ showAgea(true); };
-var nirLayer=null;
 
 // ============================================================================
 // LIDAR (v63) — ombreggiato del terreno "nudo" (bare earth): vede la sede della
-// strada SOTTO la chioma dei boschi, dove satellite/AGEA/NIR sono ciechi.
+// strada SOTTO la chioma dei boschi, dove satellite e AGEA sono ciechi.
 // ATTENZIONE: dice DOVE passa la strada e che forma ha, NON se e' asfalto o
 // sterrato (la forma non distingue il materiale). E' uno strumento per l'occhio,
 // non un input per il sampler.
@@ -682,16 +679,6 @@ function showLidar(){
 }
 document.getElementById('bLidar').onclick=showLidar;
 
-document.getElementById('bNir').onclick=function(){
-  var c=map.getCenter();
-  if(!(c.lng>=6.62&&c.lng<=9.21&&c.lat>=44.06&&c.lat<=46.46)){ toast('Il NIR copre solo il Piemonte'); return; }
-  clearBase();
-  nirLayer=L.tileLayer.wms('https://geomap.reteunitaria.piemonte.it/mapproxy/service',
-    {layers:'regp_ortofoto_ice_nir_2010',styles:'',format:'image/jpeg',version:'1.1.1',maxZoom:20,attribution:'ICE NIR 2009-2011 - Regione Piemonte'});
-  nirLayer.addTo(map); drawRouteLines();
-  document.getElementById('bNir').classList.add('on');
-  toast('Infrarosso ICE 2009-2011 (vegetazione = rosso)');
-};
 map.on('moveend',function(){
   if(!ageaLayer)return;
   var cand=ageaCandidati();
