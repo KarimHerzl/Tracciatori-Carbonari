@@ -6,7 +6,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Tracciatori Carbonari (v87)</title>
+<title>Tracciatori Carbonari (v89)</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -85,7 +85,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // CHECK_VERSION: controlla version.txt (con anti-cache forzato nel fetch, che
 // bypassa anche la CDN di GitHub Pages) e ricarica se e' uscita una versione nuova.
 (function(){
-  var LOCAL='v87';
+  var LOCAL='v89';
   fetch('version.txt?_='+Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.text() : null; })
     .then(function(txt){
@@ -105,7 +105,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build verifica-veloce v87</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build verifica-veloce v89</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -145,7 +145,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           Sempre attivi: esclusione dei tratti vietati (access privato/no) e delle ciclabili,
           direttamente nel calcolo del percorso.
         </div>
-        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v87)</button>
+        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v89)</button>
         <div id="regolePanel" style="display:none;margin-top:8px;padding:10px;background:#f2efe6;border-radius:8px;font-size:12px;line-height:1.5;color:#3a3a3a">
           <b>Regole attive (build v60)</b><br>
           <b>Asfalto (rosso):</b> strade primary/secondary/tertiary; strade comunali (unclassified/residential) senza tag fondo; qualsiasi surface pavimentato; asfalto certo da ESRI (WARM&lt;0.08, SAT&lt;0.17).<br>
@@ -777,13 +777,52 @@ function setStatus(m){
 function setStatusReset(m){ _logRighe=[]; setStatus(m); }   // pulisce il log e riparte
 function icon(kind){return L.divIcon({className:'',html:'<div class="mk '+(kind==='start'?'p':'a')+'"><span>'+(kind==='start'?'P':'A')+'</span></div>',iconSize:[26,26],iconAnchor:[6,24]});}
 var LIVELLI=[10,25,45,75];
+// Riquadro di Inghilterra e Galles (v87). Dentro questo riquadro la pagina
+// chiede i profili offroad-legal-uk-*, che ragionano sulle regole britanniche:
+// footpath e bridleway VIETATI ai motoveicoli, path senza diritto di transito
+// esclusi, divieto letto da motor_vehicle e non da access. Fuori, i profili
+// italiani. Non sono intercambiabili: quello italiano in Inghilterra manda
+// la moto sui sentieri e attraverso i campi (misurato: 3,9 km di vietato su
+// 8,5 km di sterrato), quello inglese in Italia escluderebbe le mulattiere.
+// Il bordo nord arriva a 61 per coprire tutta la Scozia isole comprese. Non
+// perche' il profilo inglese sia giusto lassu', ma perche' l'alternativa
+// sarebbe quello ITALIANO, che e' il piu' permissivo dei due: meglio peccare
+// per severita'. Chi traccia in Scozia riceve un avviso esplicito.
+var UK_BBOX=[-8.20,49.80,1.90,61.00];   // ovest, sud, est, nord
+function inUK(ll){
+  if(!ll) return false;
+  if(!(ll.lng>=UK_BBOX[0] && ll.lng<=UK_BBOX[2] &&
+       ll.lat>=UK_BBOX[1] && ll.lat<=UK_BBOX[3])) return false;
+  // L'angolo di sud-est del riquadro pesca nel Passo di Calais: Calais sta a
+  // 1.85E/50.95N, cioe' DENTRO. Ma il Kent e' piu' a nord della costa
+  // francese, e questo basta a separarli: sotto il 51esimo parallelo, a est
+  // di 1.0E, si e' in Francia. Verificato su Calais, Boulogne e Capo Gris-Nez
+  // (esclusi) contro Dover, Folkestone e Dungeness (inclusi).
+  if(ll.lng>1.0 && ll.lat<51.0) return false;
+  return true;
+}
+// Il confine anglo-scozzese e' DIAGONALE: parte da 54.99N sul Solway a ovest
+// e arriva a 55.80N a Berwick sulla costa est. Nessun rettangolo lo segue.
+// Questa retta lo approssima ed e' usata solo per AVVISARE, non per cambiare
+// profilo: in Scozia continuiamo a usare quello inglese perche' e' il piu'
+// severo dei due, e sbagliare per eccesso di prudenza non fa danni. Il
+// Land Reform Act scozzese non concede accesso ai veicoli a motore, quindi
+// li nessun profilo garantisce la legalita' e la valutazione resta all'utente.
+function inScozia(ll){
+  if(!ll) return false;
+  return ll.lat > (54.99 + (ll.lng + 3.05) * 0.794);
+}
+// Decide SOLO il punto di partenza. Niente ripieghi sull'arrivo o sul centro
+// mappa: profile() la chiamano solo doTrace e fetchLeg, che partono unicamente
+// quando partenza e arrivo esistono entrambi, quindi P.start c'e' sempre.
+function regimeUK(){ return inUK(P.start); }
 function profile(){
   var base=parseInt(document.getElementById('aggr').value,10);
   var lvl=Math.min(LIVELLI.length-1, base+(window.PASS||0));   // ogni passata alza la durezza
   // La variante LEGALE e' ora il comportamento predefinito (niente piu' flag):
   // access=private/no sono escluse direttamente nel calcolo. Per tornare alla
   // variante permissiva basta rimettere 'offroad-max-' qui.
-  return 'offroad-legal-'+LIVELLI[lvl];
+  return (regimeUK() ? 'offroad-legal-uk-' : 'offroad-legal-')+LIVELLI[lvl];
 }
 
 function viaIcon(n){return L.divIcon({className:'',html:'<div class="mk v"><span>'+n+'</span></div>',iconSize:[22,22],iconAnchor:[5,20]});}
@@ -1723,6 +1762,14 @@ async function doTrace(){
   var lbl=LABELS[Math.min(3,parseInt(document.getElementById('aggr').value,10)+(window.PASS||0))];
   if(!(window._autoEvitaCount>0)) setStatusReset('Calcolo la traccia ('+lbl+')... se il server dormiva servira qualche minuto');
   else setStatus('Calcolo la traccia ('+lbl+')...');
+  if(regimeUK()){
+    setStatus('Regole BRITANNICHE attive (profilo '+profile()+'): footpath e bridleway esclusi, si passa solo dove il transito a motore e\' ammesso.');
+    // la Scozia non segue la definitive map: il Land Reform Act da\' accesso a
+    // piedi e in bici, NON ai veicoli a motore. Sopra il 55esimo parallelo
+    // il profilo inglese non e\' una garanzia di legalita\'.
+    if(inScozia(P.start))
+      toast('Attenzione: siamo in Scozia. Li il Land Reform Act non concede accesso ai veicoli a motore e le regole inglesi non valgono: il profilo resta il piu\' severo disponibile, ma la legalita va verificata da te.');
+  }
   try{
     var allCoords=[], allMsgs=null, totKm=0, usedNogos=[];
     // ogni tratta e' calcolata separatamente; le tratte successive EVITANO
