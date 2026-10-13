@@ -6,7 +6,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Tracciatori Carbonari (v90)</title>
+<title>Tracciatori Carbonari (v91)</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -85,7 +85,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
 // CHECK_VERSION: controlla version.txt (con anti-cache forzato nel fetch, che
 // bypassa anche la CDN di GitHub Pages) e ricarica se e' uscita una versione nuova.
 (function(){
-  var LOCAL='v90';
+  var LOCAL='v91';
   fetch('version.txt?_='+Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.text() : null; })
     .then(function(txt){
@@ -105,7 +105,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
     <div class="head">
       <div class="eyebrow">Web - motore proprio</div>
       <h1>Tracciatori Carbonari</h1>
-      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build verifica-veloce v90</div>
+      <div style="font-size:10px;color:#5a6b5f;margin-top:2px">build verifica-veloce v91</div>
       <div class="sub">Massimizza sterrato - traccia sul satellite</div>
     </div>
     <div class="body">
@@ -145,7 +145,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:22px;cursor:pointe
           Sempre attivi: esclusione dei tratti vietati (access privato/no) e delle ciclabili,
           direttamente nel calcolo del percorso.
         </div>
-        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v90)</button>
+        <button class="pb" id="mostraRegole" style="margin-top:10px;width:100%">Regole di tracciamento (v91)</button>
         <div id="regolePanel" style="display:none;margin-top:8px;padding:10px;background:#f2efe6;border-radius:8px;font-size:12px;line-height:1.5;color:#3a3a3a">
           <b>Regole attive (build v60)</b><br>
           <b>Asfalto (rosso):</b> strade primary/secondary/tertiary; strade comunali (unclassified/residential) senza tag fondo; qualsiasi surface pavimentato; asfalto certo da ESRI (WARM&lt;0.08, SAT&lt;0.17).<br>
@@ -618,6 +618,36 @@ var LIDAR_SRC=[
     url:'https://sampler-fondo.onrender.com/wms/lidar?regione=abruzzo',
     layer:'EL.LIDAR.ABRUZZO.1x1.DTM',
     attr:'LiDAR PST - Ministero Ambiente (CC BY 4.0)', maxZoom:19, minZoom:12 },
+  // Sardegna (v91): geoserver della Regione, gia' https -> NESSUN ponte, come
+  // l'IGN francese. L'ombreggiato lo calcola il server: lo stile predefinito
+  // del layer e' gia' l'hillshade, quindi STYLES vuoto va bene (verificato:
+  // la richiesta con stile esplicito DTM_1m_hillshade restituisce un'immagine
+  // identica, e chiedere quel nome come LAYER da' "Could not find layer" -
+  // e' lo stile, non il layer. Stesso schema dell'ortofoto sarda in app.py).
+  //
+  // DUE SORGENTI IN CICLO, la migliore per prima, come per il Friuli.
+  // Misurato il 13/10/2026 con GetMap 1.1.1 in EPSG:3857:
+  //   1 m  -> Teti (Barbagia, interno): 30% coperto. Guspini: 80%.
+  //   10 m -> Teti e Guspini: 100%.
+  // Il mosaico a 1 m e' a chiazze e si dirada verso l'interno montuoso; il
+  // 10 m copre l'isola intera. Primo click il dettaglio dove c'e', ripremi
+  // per la rete di sicurezza. E' lo stesso rapporto che in Piemonte hanno
+  // il PCN 1 m e l'ombreggiato ICE 5 m.
+  { name:'DTM 1m ombreggiato (Sardegna)', nz:17, kind:'wms', confermato:true,
+    bbox:[8.05,38.75,9.90,41.35],
+    url:'https://webgis.regione.sardegna.it/geoserverraster/ows?',
+    layer:'raster:DTM_1M_MOSAICO_OMBRE',
+    attr:'DTM 1m - Regione Autonoma della Sardegna', maxZoom:19, minZoom:12 },
+  // nz:14 e non 15-16: a 10 m di passo il dato nativo si esaurisce intorno
+  // allo zoom 13,6. Chiedere tessere piu' fini non aggiunge informazione e
+  // raddoppia le richieste a ogni livello - sul piano gratuito e su una
+  // macchina non recente e' spreco. Oltre lo zoom 14 Leaflet ingrandisce
+  // l'ultima tessera buona, che e' esattamente quello che serve.
+  { name:'DTM 10m ombreggiato (Sardegna intera)', nz:14, kind:'wms', confermato:true,
+    bbox:[8.05,38.75,9.90,41.35],
+    url:'https://webgis.regione.sardegna.it/geoserverraster/ows?',
+    layer:'raster:DTM_10M_OMBRE_REV01',
+    attr:'DTM 10m - Regione Autonoma della Sardegna', maxZoom:19, minZoom:10 },
   // Inghilterra (v84): Environment Agency, composito DTM 1 m del 2022, ~99%
   // del territorio inglese - copertura piena, non a chiazze come il PCN.
   // L'ombreggiato lo calcola il server (layer *_Hillshade_*), il servizio e'
